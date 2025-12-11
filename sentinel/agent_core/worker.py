@@ -21,13 +21,22 @@ class Worker:
         sandbox: Sandbox,
         memory: Optional[MemoryManager] = None,
         policy_engine: PolicyEngine | None = None,
+        simulation_sandbox=None,
+        world_model=None,
     ) -> None:
         self.tool_registry = tool_registry
         self.sandbox = sandbox
         self.memory = memory
         self.executor = TopologicalExecutor(
-            tool_registry, sandbox, memory=memory, policy_engine=policy_engine
+            tool_registry,
+            sandbox,
+            memory=memory,
+            policy_engine=policy_engine,
+            simulation_sandbox=simulation_sandbox,
+            world_model=world_model,
         )
+        self.simulation_sandbox = simulation_sandbox
+        self.world_model = world_model
 
     def run(self, graph: TaskGraph) -> ExecutionTrace:
         logger.info("Worker executing task graph with %d nodes", len(graph.nodes))

@@ -174,12 +174,16 @@ class TopologicalExecutor:
         memory=None,
         validator: GraphValidator | None = None,
         policy_engine=None,
+        simulation_sandbox=None,
+        world_model=None,
     ) -> None:
         self.registry = registry
         self.sandbox = sandbox
         self.memory = memory
         self.validator = validator or GraphValidator(registry)
         self.policy_engine = policy_engine
+        self.simulation_sandbox = simulation_sandbox
+        self.world_model = world_model
 
     def execute(self, graph: TaskGraph, available_inputs: Optional[Dict[str, Any]] = None) -> ExecutionTrace:
         available_inputs = available_inputs or {}
@@ -209,18 +213,36 @@ class TopologicalExecutor:
                     continue
 
                 args = self._resolve_args(node, artifacts)
+                simulation = self._simulate_node(node, args)
+                if simulation and self.memory:
+                    self._record_simulation(node, simulation)
+                if simulation and not simulation.success:
+                    result = ExecutionResult(
+                        node=node,
+                        success=False,
+                        error="Simulation predicted failure",
+                        simulation=simulation,
+                    )
+                    failed.add(node.id)
+                    trace.add(result)
+                    if self.memory:
+                        self._record_memory(result)
+                    self._update_neighbors(node.id, dependencies, indegree, ready)
+                    continue
                 if self.policy_engine:
                     try:
                         self.policy_engine.validate_execution(node, self.registry)
                     except Exception as exc:  # pragma: no cover - defensive safety
-                        result = ExecutionResult(node=node, success=False, error=str(exc))
+                        result = ExecutionResult(
+                            node=node, success=False, error=str(exc), simulation=simulation
+                        )
                         failed.add(node.id)
                         trace.add(result)
                         if self.memory:
                             self._record_memory(result)
                         self._update_neighbors(node.id, dependencies, indegree, ready)
                         continue
-                result = self._run_with_recovery(node, args)
+                result = self._run_with_recovery(node, args, simulation)
                 if result.success:
                     executed.add(node.id)
                     self._store_outputs(node, result.output, artifacts)
@@ -287,21 +309,33 @@ class TopologicalExecutor:
             return args or node.description
         return self.sandbox.execute(self.registry.call, node.tool, **args)
 
-    def _run_with_recovery(self, node: TaskNode, args: Dict[str, Any]) -> ExecutionResult:
+    def _run_with_recovery(
+        self, node: TaskNode, args: Dict[str, Any], simulation=None
+    ) -> ExecutionResult:
         try:
             output = self._execute_node(node, args)
-            return ExecutionResult(node=node, success=True, output=output)
+            return ExecutionResult(
+                node=node, success=True, output=output, simulation=simulation
+            )
         except Exception as exc:  # pragma: no cover - runtime failures are expected
             logger.error("Task %s failed: %s", node.id, exc)
             try:
                 retry_output = self._execute_node(node, args)
                 return ExecutionResult(
-                    node=node, success=True, output=retry_output, attempted_recovery=True
+                    node=node,
+                    success=True,
+                    output=retry_output,
+                    attempted_recovery=True,
+                    simulation=simulation,
                 )
             except Exception as retry_exc:  # pragma: no cover - runtime failures expected
                 logger.error("Recovery attempt for %s failed: %s", node.id, retry_exc)
                 return ExecutionResult(
-                    node=node, success=False, error=str(retry_exc), attempted_recovery=True
+                    node=node,
+                    success=False,
+                    error=str(retry_exc),
+                    attempted_recovery=True,
+                    simulation=simulation,
                 )
 
     def _store_outputs(self, node: TaskNode, output: Any, artifacts: Dict[str, Any]) -> None:
@@ -339,4 +373,31 @@ class TopologicalExecutor:
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Failed to persist execution result: %s", exc)
+
+    def _simulate_node(self, node: TaskNode, args: Dict[str, Any]):
+        if not self.simulation_sandbox or not node.tool:
+            return None
+        return self.simulation_sandbox.simulate_tool_call(
+            node.tool, args, world_model=self.world_model
+        )
+
+    def _record_simulation(self, node: TaskNode, simulation) -> None:
+        if not self.memory:
+            return
+        try:
+            self.memory.store_fact(
+                "simulations",
+                key=node.id,
+                value={
+                    "node": node.id,
+                    "tool": node.tool,
+                    "success": simulation.success,
+                    "predicted_outputs": simulation.predicted_outputs,
+                    "predicted_vfs_changes": simulation.predicted_vfs_changes,
+                    "benchmark": simulation.benchmark,
+                    "warnings": simulation.warnings,
+                },
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("Failed to persist simulation result: %s", exc)
 
