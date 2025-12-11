@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from sentinel.logging.logger import get_logger
 from sentinel.memory.intelligence import MemoryContextBuilder
@@ -11,6 +11,9 @@ from sentinel.planning.task_graph import GraphValidator, TaskGraph, TaskNode
 from sentinel.policy.policy_engine import PolicyEngine
 from sentinel.tools.registry import ToolRegistry
 
+if TYPE_CHECKING:
+    from sentinel.world.model import WorldModel
+
 logger = get_logger(__name__)
 
 
@@ -18,6 +21,9 @@ logger = get_logger(__name__)
 class PlanContext:
     goal: str
     goal_type: str
+    domain: str
+    domain_capabilities: List[str]
+    resources: List[str]
     memories: List[Dict[str, Any]]
     context_block: str
 
@@ -31,12 +37,14 @@ class AdaptivePlanner:
         memory: MemoryManager,
         policy_engine: PolicyEngine,
         memory_context_builder: Optional[MemoryContextBuilder] = None,
+        world_model: Optional["WorldModel"] = None,
     ) -> None:
         self.tool_registry = tool_registry
         self.memory = memory
         self.policy_engine = policy_engine
         self.validator = GraphValidator(tool_registry)
         self.memory_context_builder = memory_context_builder or MemoryContextBuilder(memory)
+        self.world_model = world_model
 
     # ------------------------------------------------------------------
     # Public API
@@ -66,16 +74,46 @@ class AdaptivePlanner:
     # ------------------------------------------------------------------
     def _analyze_goal(self, goal: str) -> PlanContext:
         normalized = goal.lower()
-        if any(keyword in normalized for keyword in ["code", "bug", "refactor"]):
-            goal_type = "code_generation"
-        elif any(keyword in normalized for keyword in ["service", "api", "microservice"]):
-            goal_type = "microservice"
-        elif any(keyword in normalized for keyword in ["file", "process", "csv", "json"]):
-            goal_type = "file_processing"
-        else:
-            goal_type = "info_query"
+        domain_name = ""
+        domain_capabilities: List[str] = []
+        resources: List[str] = []
+        if self.world_model:
+            domain_profile = self.world_model.get_domain(goal)
+            domain_name = domain_profile.name
+            domain_capabilities = self.world_model.list_capabilities(domain_profile.name)
+            resources = [descriptor.name for descriptor in self.world_model.predict_required_resources(goal)]
+        goal_type = self._goal_type_from(domain_name, normalized)
         memories, context_block = self.memory_context_builder.build_context(goal, goal_type, limit=6)
-        return PlanContext(goal=goal, goal_type=goal_type, memories=memories, context_block=context_block)
+        return PlanContext(
+            goal=goal,
+            goal_type=goal_type,
+            domain=domain_name or goal_type,
+            domain_capabilities=domain_capabilities,
+            resources=resources,
+            memories=memories,
+            context_block=context_block,
+        )
+
+    def _goal_type_from(self, domain_name: str, normalized_goal: str) -> str:
+        domain_mapping = {
+            "coding": "code_generation",
+            "multi-service": "microservice",
+            "pipelines": "pipeline_design",
+            "devops": "devops",
+            "web tasks": "web_task",
+            "research": "research",
+            "optimization": "optimization",
+            "automation": "automation",
+        }
+        if domain_name in domain_mapping:
+            return domain_mapping[domain_name]
+        if any(keyword in normalized_goal for keyword in ["code", "bug", "refactor"]):
+            return "code_generation"
+        if any(keyword in normalized_goal for keyword in ["service", "api", "microservice"]):
+            return "microservice"
+        if any(keyword in normalized_goal for keyword in ["file", "process", "csv", "json"]):
+            return "file_processing"
+        return "info_query"
 
     def _generate_subgoals(self, plan_context: PlanContext, reflection: Optional[Dict[str, Any]]) -> List[str]:
         subgoals: List[str] = []
@@ -85,6 +123,18 @@ class AdaptivePlanner:
             subgoals.extend(["design_service", "generate_service", "validate_service"])
         elif plan_context.goal_type == "file_processing":
             subgoals.extend(["gather_files", "process_files", "summarize_outputs"])
+        elif plan_context.goal_type == "pipeline_design":
+            subgoals.extend(["define_sources", "design_pipeline", "validate_pipeline"])
+        elif plan_context.goal_type == "devops":
+            subgoals.extend(["assess_environment", "configure_deployment", "validate_rollout"])
+        elif plan_context.goal_type == "web_task":
+            subgoals.extend(["plan_navigation", "collect_web_data", "summarize_web_findings"])
+        elif plan_context.goal_type == "research":
+            subgoals.extend(["collect_sources", "synthesize_findings", "summarize_research"])
+        elif plan_context.goal_type == "optimization":
+            subgoals.extend(["profile_system", "apply_optimizations", "validate_performance"])
+        elif plan_context.goal_type == "automation":
+            subgoals.extend(["map_workflow", "compose_automation", "validate_automation"])
         else:
             subgoals.extend(["collect_information", "synthesize_answer"])
         if reflection and reflection.get("issues_detected"):
@@ -125,6 +175,9 @@ class AdaptivePlanner:
         )
         metadata = {
             "origin_goal": plan_context.goal,
+            "domain": plan_context.domain,
+            "domain_capabilities": plan_context.domain_capabilities,
+            "resources": plan_context.resources,
             "knowledge_sources": [m.get("namespace", "") for m in plan_context.memories],
             "tool_choices": [node.tool for node in nodes],
             "reasoning_trace": self._reasoning_trace(plan_context, nodes),
@@ -154,7 +207,8 @@ class AdaptivePlanner:
     def _reasoning_trace(self, plan_context: PlanContext, nodes: List[TaskNode]) -> str:
         tool_descriptions = [f"{node.id}:{node.tool or 'no-tool'}" for node in nodes]
         return (
-            f"Goal type={plan_context.goal_type}; used memories={len(plan_context.memories)}; "
+            f"Goal type={plan_context.goal_type}; domain={plan_context.domain or 'n/a'}; "
+            f"resources={','.join(plan_context.resources)}; used memories={len(plan_context.memories)}; "
             f"tools={';'.join(tool_descriptions)}"
         )
 

@@ -2,24 +2,26 @@
 from __future__ import annotations
 
 from sentinel.agent_core.autonomy import AutonomyLoop
-from sentinel.agent_core.worker import Worker
-from sentinel.agent_core.sandbox import Sandbox
-from sentinel.agent_core.reflection import Reflector
-from sentinel.agent_core.self_mod import SelfModificationEngine
-from sentinel.agent_core.patch_auditor import PatchAuditor
 from sentinel.agent_core.hot_reloader import HotReloader
-from sentinel.memory.memory_manager import MemoryManager
+from sentinel.agent_core.patch_auditor import PatchAuditor
+from sentinel.agent_core.reflection import Reflector
+from sentinel.agent_core.sandbox import Sandbox
+from sentinel.agent_core.self_mod import SelfModificationEngine
+from sentinel.agent_core.worker import Worker
+from sentinel.dialog_manager import DialogManager
+from sentinel.logging.logger import get_logger
 from sentinel.memory.intelligence import MemoryContextBuilder
+from sentinel.memory.memory_manager import MemoryManager
 from sentinel.planning.adaptive_planner import AdaptivePlanner
 from sentinel.policy.policy_engine import PolicyEngine
 from sentinel.reflection.reflection_engine import ReflectionEngine
-from sentinel.tools.registry import DEFAULT_TOOL_REGISTRY
-from sentinel.tools.web_search import WEB_SEARCH_TOOL
-from sentinel.tools.internet_extractor import INTERNET_EXTRACTOR_TOOL
 from sentinel.tools.code_analyzer import CODE_ANALYZER_TOOL
+from sentinel.tools.internet_extractor import INTERNET_EXTRACTOR_TOOL
 from sentinel.tools.microservice_builder import MICROSERVICE_BUILDER_TOOL
+from sentinel.tools.registry import DEFAULT_TOOL_REGISTRY
 from sentinel.tools.tool_generator import generate_echo_tool
-from sentinel.logging.logger import get_logger
+from sentinel.tools.web_search import WEB_SEARCH_TOOL
+from sentinel.world.model import WorldModel
 
 logger = get_logger(__name__)
 
@@ -27,14 +29,21 @@ logger = get_logger(__name__)
 class SentinelController:
     def __init__(self) -> None:
         self.memory = MemoryManager()
+        self.world_model = WorldModel(self.memory)
         self.tool_registry = DEFAULT_TOOL_REGISTRY
         self.sandbox = Sandbox()
         self.memory_context_builder = MemoryContextBuilder(self.memory)
         self.policy_engine = PolicyEngine(self.memory)
         self._register_default_tools()
 
+        self.dialog_manager = DialogManager(self.memory, self.world_model)
+
         self.planner = AdaptivePlanner(
-            self.tool_registry, memory=self.memory, policy_engine=self.policy_engine, memory_context_builder=self.memory_context_builder
+            self.tool_registry,
+            memory=self.memory,
+            policy_engine=self.policy_engine,
+            memory_context_builder=self.memory_context_builder,
+            world_model=self.world_model,
         )
         self.worker = Worker(
             self.tool_registry, self.sandbox, memory=self.memory, policy_engine=self.policy_engine
@@ -63,16 +72,18 @@ class SentinelController:
 
     def process_input(self, message: str) -> str:
         logger.info("Processing user input: %s", message)
+        dialog_context = self.dialog_manager.build_context(message)
         trace = self.autonomy.run(message, timeout=2.0)
         latest_reflection = self.memory.latest("reflection.operational") or self.memory.latest(
             "reflection"
         )
-        if latest_reflection:
-            return latest_reflection.content
-        return trace.summary()
+        response = latest_reflection.content if latest_reflection else trace.summary()
+        self.dialog_manager.record_turn(message, response, context=dialog_context)
+        return response
 
     def export_state(self):
         tools = {
             name: getattr(tool, "description", "") for name, tool in self.tool_registry.list_tools().items()
         }
-        return {"memory": self.memory.export_state(), "tools": tools}
+        world_model_state = self.memory.query("world_model", key="state")
+        return {"memory": self.memory.export_state(), "tools": tools, "world_model": world_model_state}
