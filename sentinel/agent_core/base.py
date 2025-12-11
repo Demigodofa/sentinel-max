@@ -21,6 +21,30 @@ class Plan:
     steps: List[PlanStep]
 
 
+class Tool:
+    """Base class for all tools executed by Sentinel.
+
+    Tools are intentionally minimal and deterministic. Subclasses should
+    implement :py:meth:`execute` and avoid side effects so that execution can be
+    replayed safely inside the sandbox.
+    """
+
+    name: str
+    description: str
+
+    def __init__(self, name: str, description: str = "") -> None:
+        self.name = name
+        self.description = description or name
+
+    def __call__(self, **kwargs: Any) -> Any:  # pragma: no cover - thin wrapper
+        return self.execute(**kwargs)
+
+    def execute(self, **kwargs: Any) -> Any:  # pragma: no cover - abstract
+        """Run the tool with the provided keyword arguments."""
+
+        raise NotImplementedError("Tool subclasses must implement execute()")
+
+
 @dataclass
 class ExecutionResult:
     step: PlanStep

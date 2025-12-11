@@ -25,7 +25,37 @@ class Planner:
         steps: List[PlanStep] = []
         normalized = goal.strip().lower()
 
-        if normalized.startswith("search") or self.tool_registry.has_tool("web_search"):
+        if "code" in normalized and self.tool_registry.has_tool("code_analyzer"):
+            steps.append(
+                PlanStep(
+                    step_id=1,
+                    description="Analyze provided code for safety",
+                    tool_name="code_analyzer",
+                    params={"code": goal},
+                    expected_output="Risk assessment",
+                )
+            )
+        elif "service" in normalized and self.tool_registry.has_tool("microservice_builder"):
+            steps.append(
+                PlanStep(
+                    step_id=1,
+                    description="Generate microservice from description",
+                    tool_name="microservice_builder",
+                    params={"description": goal},
+                    expected_output="FastAPI microservice specification",
+                )
+            )
+        elif "scrape" in normalized or "extract" in normalized:
+            steps.append(
+                PlanStep(
+                    step_id=1,
+                    description="Extract information from the web",
+                    tool_name="internet_extract" if self.tool_registry.has_tool("internet_extract") else None,
+                    params={"url": goal.split(" ")[-1]},
+                    expected_output="Cleaned web content",
+                )
+            )
+        elif normalized.startswith("search") or self.tool_registry.has_tool("web_search"):
             steps.append(
                 PlanStep(
                     step_id=1,
