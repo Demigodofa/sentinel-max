@@ -126,3 +126,7 @@ class Planner:
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Failed to record plan in memory: %s", exc)
+
+
+# Compatibility alias for long-horizon orchestration components
+SentinelPlanner = Planner
