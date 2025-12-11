@@ -35,3 +35,21 @@ class DialogManager:
             "context": context or self.build_context(user_message),
         }
         self.memory.store_fact("dialog_turns", key=None, value=payload, metadata={"source": "dialog_manager"})
+
+    # ------------------------------------------------------------------
+    def prompt_execution_approval(self, description: str):
+        payload = {"type": "execution_approval", "description": description}
+        self.memory.store_fact("approvals", key=None, value=payload, metadata={"source": "dialog_manager"})
+        return {
+            "prompt": f"Approval requested: {description}",
+            "tone": "concise",
+        }
+
+    def notify_execution_status(self, status: dict):
+        message = {
+            "type": "execution_status",
+            "status": status,
+            "summary": "Execution update",
+        }
+        self.memory.store_fact("execution_notifications", key=None, value=message, metadata={"source": "dialog_manager"})
+        return message

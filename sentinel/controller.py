@@ -8,6 +8,8 @@ from sentinel.agent_core.reflection import Reflector
 from sentinel.agent_core.sandbox import Sandbox
 from sentinel.agent_core.self_mod import SelfModificationEngine
 from sentinel.agent_core.worker import Worker
+from sentinel.execution.approval_gate import ApprovalGate
+from sentinel.execution.execution_controller import ExecutionController, ExecutionMode
 from sentinel.dialog_manager import DialogManager
 from sentinel.logging.logger import get_logger
 from sentinel.memory.intelligence import MemoryContextBuilder
@@ -39,6 +41,7 @@ class SentinelController:
         self._register_default_tools()
 
         self.dialog_manager = DialogManager(self.memory, self.world_model)
+        self.approval_gate = ApprovalGate(self.dialog_manager)
 
         self.planner = AdaptivePlanner(
             self.tool_registry,
@@ -55,12 +58,21 @@ class SentinelController:
             policy_engine=self.policy_engine,
             simulation_sandbox=self.simulation_sandbox,
             world_model=self.world_model,
+            approval_gate=self.approval_gate,
+        )
+        self.execution_controller = ExecutionController(
+            self.worker,
+            self.policy_engine,
+            self.approval_gate,
+            self.dialog_manager,
+            self.memory,
         )
         self.reflection_engine = ReflectionEngine(self.memory, policy_engine=self.policy_engine, memory_context_builder=self.memory_context_builder)
         self.reflector = Reflector(self.memory, self.reflection_engine)
         self.autonomy = AutonomyLoop(
             self.planner,
             self.worker,
+            self.execution_controller,
             self.reflector,
             self.memory,
             cycle_limit=3,
@@ -81,7 +93,8 @@ class SentinelController:
     def process_input(self, message: str) -> str:
         logger.info("Processing user input: %s", message)
         dialog_context = self.dialog_manager.build_context(message)
-        trace = self.autonomy.run(message, timeout=2.0)
+        planned_graph = self.planner.plan(message)
+        trace = self.autonomy.run(planned_graph, ExecutionMode.UNTIL_COMPLETE, parameters={})
         latest_reflection = self.memory.latest("reflection.operational") or self.memory.latest(
             "reflection"
         )

@@ -31,11 +31,21 @@ class PolicyEngine:
         allowed_permissions: Optional[Set[str]] = None,
         deterministic_first: bool = True,
         parallel_limit: int = 3,
+        max_execution_time: float | None = None,
+        max_cycles: int | None = None,
+        max_consecutive_failures: int = 3,
+        real_tool_allowlist: Optional[Set[str]] = None,
+        approval_required: bool = True,
     ) -> None:
         self.memory = memory
         self.allowed_permissions = allowed_permissions or {"read", "analyze", "search", "generate"}
         self.deterministic_first = deterministic_first
         self.parallel_limit = parallel_limit
+        self.max_execution_time = max_execution_time
+        self.max_cycles = max_cycles
+        self.max_consecutive_failures = max_consecutive_failures
+        self.real_tool_allowlist = real_tool_allowlist
+        self.approval_required = approval_required
 
     # ------------------------------------------------------------------
     # Plan-time policies
@@ -86,6 +96,29 @@ class PolicyEngine:
     # ------------------------------------------------------------------
     # Execution-time policies
     # ------------------------------------------------------------------
+    def check_execution_allowed(self, tool_name: str) -> None:
+        if self.real_tool_allowlist is not None and tool_name not in self.real_tool_allowlist:
+            self._record_event("block", f"Tool {tool_name} not allowed for real execution")
+            raise PermissionError(f"Real execution not permitted for tool {tool_name}")
+
+    def check_runtime_limits(self, context: Dict[str, Any]) -> None:
+        elapsed = context.get("elapsed")
+        cycles = context.get("cycles", 0)
+        consecutive_failures = context.get("consecutive_failures", 0)
+        if self.max_execution_time is not None and elapsed is not None and elapsed > self.max_execution_time:
+            self._record_event("block", "Max execution time exceeded", {"elapsed": elapsed})
+            raise TimeoutError("Execution time limit reached")
+        if self.max_cycles is not None and cycles >= self.max_cycles:
+            self._record_event("block", "Max cycles reached", {"cycles": cycles})
+            raise RuntimeError("Execution cycle limit reached")
+        if self.max_consecutive_failures is not None and consecutive_failures > self.max_consecutive_failures:
+            self._record_event(
+                "block",
+                "Consecutive failure limit exceeded",
+                {"consecutive_failures": consecutive_failures},
+            )
+            raise RuntimeError("Too many consecutive tool failures")
+
     def validate_execution(self, node: TaskNode, registry: ToolRegistry) -> None:
         if node.tool is None:
             return
