@@ -41,6 +41,7 @@ This document is the living system specification for Sentinel MAX. It summarizes
 ### Tools
 - **ToolRegistry**: Thread-safe registry enforcing unique, typed Tool instances, dynamic loading, and dispatch.
 - **Default tools**: deterministic web search, internet extractor (scrape/clean/summarize with optional vector storage), static code analyzer (AST heuristics), microservice builder (audited FastAPI generator/start helper), and configurable echo tool.
+- **BrowserAgent**: hybrid headless/visible browser automation (Playwright headless + Chrome CDP) with DOM-only interactions and unified click/fill/scroll/JS APIs.
 - **Web scraper**: deterministic HTML/text fetcher used by internet extractor.
 
 ### Interfaces
