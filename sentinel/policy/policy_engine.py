@@ -14,6 +14,10 @@ if TYPE_CHECKING:  # pragma: no cover - avoid circular imports at runtime
 logger = get_logger(__name__)
 
 
+class PolicyViolation(Exception):
+    """Raised when a project violates MAX system policy rules."""
+
+
 @dataclass
 class PolicyDecision:
     allowed: bool
@@ -29,7 +33,7 @@ class PolicyEngine:
 
     def __init__(
         self,
-        memory: MemoryManager,
+        memory: MemoryManager | None = None,
         allowed_permissions: Optional[Set[str]] = None,
         deterministic_first: bool = True,
         parallel_limit: int = 3,
@@ -41,6 +45,11 @@ class PolicyEngine:
         max_research_depth: int = 3,
         max_documents_per_cycle: int = 15,
         approved_domains: Optional[Set[str]] = None,
+        max_goals: int = 50,
+        max_dependency_depth: int = 20,
+        max_project_duration_days: int = 14,
+        max_refinement_rounds: int = 25,
+        forbidden_keywords: Optional[list[str]] = None,
     ) -> None:
         self.memory = memory
         self.allowed_permissions = allowed_permissions or {"read", "analyze", "search", "generate"}
@@ -54,6 +63,16 @@ class PolicyEngine:
         self.max_research_depth = max_research_depth
         self.max_documents_per_cycle = max_documents_per_cycle
         self.approved_domains = approved_domains or {"research", "automation", "coding", "web tasks"}
+        self.max_goals = max_goals
+        self.max_dependency_depth = max_dependency_depth
+        self.max_project_duration_days = max_project_duration_days
+        self.max_refinement_rounds = max_refinement_rounds
+        self.forbidden_keywords = forbidden_keywords or [
+            "exploit",
+            "bypass security",
+            "privilege escalation",
+            "harm",
+        ]
 
     # ------------------------------------------------------------------
     # Plan-time policies
@@ -184,7 +203,58 @@ class PolicyEngine:
     def _record_event(self, event_type: str, message: str, details: Optional[Dict[str, Any]] = None) -> None:
         payload = {"event": event_type, "message": message, "details": details or {}}
         try:
-            self.memory.store_text(str(payload), namespace="policy_events", metadata=payload)
+            if self.memory is not None:
+                self.memory.store_text(str(payload), namespace="policy_events", metadata=payload)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Failed to persist policy event: %s", exc)
+
+    # ------------------------------------------------------------------
+    # Long-horizon project governance
+    # ------------------------------------------------------------------
+    def check_project_limits(self, project_data: Dict[str, Any]) -> None:
+        goals = project_data.get("goals", [])
+        if len(goals) > self.max_goals:
+            raise PolicyViolation(
+                f"Project has {len(goals)} goals, exceeds limit {self.max_goals}"
+            )
+
+    def validate_project_plan(self, plan: Dict[str, Any]) -> None:
+        """
+        Validate dependency depth + forbidden actions.
+        Plan is project_engine.build_long_horizon_plan(project_id)
+        """
+
+        dependencies = plan.get("dependencies", {})
+        max_depth = max((d.get("depth", 0) for d in dependencies.values()), default=0)
+
+        if max_depth > self.max_dependency_depth:
+            raise PolicyViolation(
+                f"Dependency graph depth {max_depth} exceeds limit {self.max_dependency_depth}"
+            )
+
+        for step in plan.get("steps", []):
+            action = step.get("action", "").lower()
+            for bad in self.forbidden_keywords:
+                if bad in action:
+                    raise PolicyViolation(
+                        f"Forbidden action detected in plan: '{action}'"
+                    )
+
+    def enforce_autonomy_constraints(self, project_id: str, state: Dict[str, Any]) -> None:
+        """
+        Called before each autonomous cycle.
+        Prevents runaway execution.
+        """
+
+        rounds = state.get("refinement_rounds", 0)
+        if rounds > self.max_refinement_rounds:
+            raise PolicyViolation(
+                f"Project {project_id} exceeded refinement limit: {rounds}"
+            )
+
+        days = state.get("project_age_days", 0)
+        if days > self.max_project_duration_days:
+            raise PolicyViolation(
+                f"Project age {days} days exceeds limit {self.max_project_duration_days}"
+            )
 

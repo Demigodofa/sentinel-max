@@ -26,6 +26,12 @@ class ProjectDependencyGraph:
         stack: Set[str] = set()
         cycles = []
 
+        def _dependencies(node: str) -> List[str]:
+            deps = graph.get(node, [])
+            if isinstance(deps, dict):
+                return deps.get("depends_on", [])
+            return deps
+
         def dfs(node: str, path: List[str]):
             if node in stack:
                 cycle_start = path.index(node)
@@ -35,7 +41,7 @@ class ProjectDependencyGraph:
                 return
             visited.add(node)
             stack.add(node)
-            for dep in graph.get(node, []):
+            for dep in _dependencies(node):
                 dfs(dep, path + [dep])
             stack.remove(node)
 
@@ -47,7 +53,8 @@ class ProjectDependencyGraph:
         unresolved = []
         all_nodes = set(graph.keys())
         for node, deps in graph.items():
-            for d in deps:
+            dependencies = deps.get("depends_on", deps) if isinstance(deps, dict) else deps
+            for d in dependencies:
                 if d not in all_nodes:
                     unresolved.append(d)
         return unresolved
@@ -60,7 +67,10 @@ class ProjectDependencyGraph:
             if node in visited:
                 return
             visited.add(node)
-            for dep in graph.get(node, []):
+            dependencies = graph.get(node, [])
+            if isinstance(dependencies, dict):
+                dependencies = dependencies.get("depends_on", [])
+            for dep in dependencies:
                 dfs(dep)
             order.append(node)
 
