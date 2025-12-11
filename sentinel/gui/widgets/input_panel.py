@@ -61,3 +61,6 @@ class InputPanel(ttk.Frame):
             return
         on_send(text)
         self.entry_var.set("")
+
+    def current_text(self) -> str:
+        return self.entry_var.get().strip()

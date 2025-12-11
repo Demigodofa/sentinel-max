@@ -450,8 +450,11 @@ class MultiAgentEngine:
             plan.add_metadata(optimizations=[opt.description for opt in optimizations])
         return plan
 
-    def coordinate(self, normalized_goal: str) -> TaskGraph:
-        plan = self.planner_agent.build_plan(normalized_goal)
+    def coordinate(self, normalized_goal: str | TaskGraph) -> TaskGraph:
+        if isinstance(normalized_goal, TaskGraph):
+            plan = normalized_goal
+        else:
+            plan = self.planner_agent.build_plan(normalized_goal)
         criticisms = self.critic_agent.evaluate(plan)
         plan = self.apply_critic_feedback(plan, criticisms)
         simulations = self.simulation_agent.simulate(plan)

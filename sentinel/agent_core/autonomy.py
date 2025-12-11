@@ -8,6 +8,7 @@ from sentinel.agent_core.worker import Worker
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.planning.adaptive_planner import AdaptivePlanner
+from sentinel.planning.task_graph import TaskGraph
 from sentinel.agent_core.reflection import Reflector
 from sentinel.execution.execution_controller import ExecutionController, ExecutionMode
 
@@ -75,6 +76,40 @@ class AutonomyLoop:
             self.last_reflection = reflection
         self.stop()
         return trace
+
+    def run_graph(
+        self,
+        graph: TaskGraph,
+        goal: str,
+        exit_conditions: Optional[Dict[str, Any]] = None,
+    ) -> ExecutionTrace:
+        """Execute a pre-built task graph and record reflections."""
+
+        exit_conditions = exit_conditions or {}
+        trace = ExecutionTrace()
+        self._running = True
+        self.memory.store_text(goal, namespace="goals", metadata={"type": "normalized"})
+        cycle_trace = self.worker.run(graph)
+        self._merge_trace(trace, cycle_trace)
+        self._record_reflection(cycle_trace, "operational", "graph-execution", goal)
+        if not cycle_trace.failed_nodes and self._goal_completed(exit_conditions, cycle_trace):
+            self._record_reflection(cycle_trace, "user-preference", "graph-complete", goal)
+        else:
+            self._record_reflection(cycle_trace, "self-model", "graph-followup", goal)
+        self.stop()
+        return trace
+
+    # ------------------------------------------------------------------
+    def _goal_completed(self, exit_conditions: Dict[str, Any], trace: ExecutionTrace) -> bool:
+        if exit_conditions.get("goal_complete") is True:
+            return True
+        if exit_conditions.get("require_success") and trace.failed_nodes:
+            return False
+        return not trace.failed_nodes
+
+    def _merge_trace(self, main: ExecutionTrace, addition: ExecutionTrace) -> None:
+        main.results.extend(addition.results)
+        main.batches.extend(addition.batches)
 
     def _record_reflection(
         self, trace: ExecutionTrace, reflection_type: str, context: str, goal: str | None
