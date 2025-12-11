@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
 from typing import List, Optional
 from uuid import uuid4
 
 from sentinel.logging.logger import get_logger
+from sentinel.agent_core.base import PlanStep
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.planning.task_graph import GraphValidator, TaskGraph, TaskNode
 from sentinel.tools.registry import ToolRegistry
@@ -126,3 +128,80 @@ class Planner:
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Failed to record plan in memory: %s", exc)
+
+
+class SentinelPlanner:
+    """
+    Deterministic planner that transforms goals into multi-phase steps.
+    Project-aware: includes project_id, goal_id, and phase tagging.
+    """
+
+    def __init__(self) -> None:
+        pass
+
+    # ------------------------------------------------------------
+    # PUBLIC API
+    # ------------------------------------------------------------
+
+    def plan(
+        self,
+        goal_text: str,
+        *,
+        project_id: str | None = None,
+        goal_id: str | None = None,
+        phase: int | None = None,
+    ) -> List[PlanStep]:
+        """
+        Generates deterministic steps from goal text.
+        Includes optional project metadata.
+        """
+
+        base_hash = hashlib.sha256(goal_text.encode()).hexdigest()[:8]
+
+        raw_steps = self._expand_goal(goal_text)
+
+        steps: List[PlanStep] = []
+        for i, action in enumerate(raw_steps, start=1):
+            step = PlanStep(
+                step_id=i,
+                description=action,
+                depends_on=[],
+                metadata={
+                    "project_id": project_id,
+                    "goal_id": goal_id,
+                    "phase": phase,
+                    "ordinal": i,
+                    "goal_fingerprint": base_hash,
+                },
+            )
+            steps.append(step)
+
+        return steps
+
+    # ------------------------------------------------------------
+    # INTERNAL GOAL BREAKDOWN
+    # ------------------------------------------------------------
+
+    def _expand_goal(self, text: str) -> List[str]:
+        """
+        Convert a goal into deterministic substeps.
+        No LLM calls. Fully deterministic.
+        """
+
+        text = text.strip()
+
+        if len(text.split()) <= 4:
+            return [
+                f"Investigate goal: {text}",
+                f"Define output requirements for: {text}",
+                f"Produce actionable instructions for: {text}",
+            ]
+
+        # Larger goals
+        return [
+            f"Summarize intent of: {text}",
+            f"Extract required knowledge for: {text}",
+            f"Determine blocking dependencies for: {text}",
+            f"Draft execution sequence for: {text}",
+            f"Generate verification criteria for: {text}",
+        ]

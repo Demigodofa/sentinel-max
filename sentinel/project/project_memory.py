@@ -1,30 +1,21 @@
-# sentinel/project/project_memory.py
+"""Persistence utilities for long-horizon projects."""
+from __future__ import annotations
 
 import json
-import os
 import time
-import uuid
-from typing import Dict, List, Any
+from pathlib import Path
+from typing import Any, Dict
 
 
 class ProjectMemory:
-    """
-    Persistent, versioned long-horizon memory store for multi-day projects.
-    Stores:
-        - metadata
-        - goals
-        - plans
-        - dependency graphs
-        - execution history
-        - reflection history
-    """
+    """Lightweight JSON-backed storage for project metadata and logs."""
 
-    def __init__(self, storage_path: str = "projects"):
-        self.storage_path = storage_path
-        os.makedirs(storage_path, exist_ok=True)
+    def __init__(self, storage_path: str | Path = "projects") -> None:
+        self.storage_dir = Path(storage_path)
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
 
-    def _path(self, project_id: str) -> str:
-        return os.path.join(self.storage_path, f"{project_id}.json")
+    def _project_path(self, project_id: str) -> Path:
+        return self.storage_dir / f"{project_id}.json"
 
     def _atomic_write(self, path: str, payload: Dict[str, Any]) -> None:
         tmp_path = f"{path}.tmp"
@@ -49,19 +40,18 @@ class ProjectMemory:
             raise ValueError("reflections must be a list")
 
     def create(self, name: str, description: str) -> Dict[str, Any]:
-        project_id = str(uuid.uuid4())
+        project_id = self._generate_project_id()
         data = {
             "project_id": project_id,
             "name": name,
             "description": description,
             "created_at": time.time(),
             "updated_at": time.time(),
-            "version": 1,
             "goals": {},
             "plans": {},
             "dependencies": {},
-            "history": [],
-            "reflections": []
+            "logs": [],
+            "reflections": [],
         }
         self.save(project_id, data)
         return data
@@ -94,16 +84,30 @@ class ProjectMemory:
                         "version": data.get("version"),
                     })
         return sorted(results, key=lambda r: r.get("updated_at") or 0, reverse=True)
+        path = self._project_path(project_id)
+        if not path.exists():
+            raise FileNotFoundError(f"Project not found: {project_id}")
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data
+
+    def save(self, project_id: str, project_data: Dict[str, Any]) -> None:
+        project_data["updated_at"] = time.time()
+        path = self._project_path(project_id)
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(project_data, f, indent=2)
 
     def append_log(self, project_id: str, entry: Dict[str, Any]) -> None:
-        data = self.load(project_id)
-        entry["timestamp"] = time.time()
-        data["history"].append(entry)
-        self.save(project_id, data)
+        project = self.load(project_id)
+        entry = {**entry, "timestamp": time.time()}
+        project.setdefault("logs", []).append(entry)
+        self.save(project_id, project)
 
-    def get_history(self, project_id: str) -> List[Dict[str, Any]]:
-        data = self.load(project_id)
-        return data.get("history", [])
+    def append_reflection(self, project_id: str, reflection: Dict[str, Any]) -> None:
+        project = self.load(project_id)
+        record = {**reflection, "timestamp": time.time()}
+        project.setdefault("reflections", []).append(record)
+        self.save(project_id, project)
 
     def append_reflection(self, project_id: str, entry: Dict[str, Any]) -> None:
         data = self.load(project_id)
@@ -145,3 +149,7 @@ class ProjectMemory:
     def snapshot(self, project_id: str) -> Dict[str, Any]:
         """Return a copy of the current project state."""
         return self.load(project_id)
+    def _generate_project_id(self) -> str:
+        import uuid
+
+        return str(uuid.uuid4())
