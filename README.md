@@ -33,6 +33,18 @@ Enterprise-grade autonomous agent framework with long-horizon governance, reflec
    python -m pytest sentinel/tests
    ```
 
+### Resolving merge conflicts after pulling
+
+If you pull upstream changes and see conflicts (for example in `sentinel/dialog/dialog_manager.py`), keep the version that includes the newer long-horizon reporting helpers rather than deleting sections. A safe resolution workflow:
+
+1. Run `git status` to list conflicted files.
+2. Open each file with conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`).
+3. Keep the section that preserves composite reporting (e.g., `show_full_report`) and the long-horizon policy/dependency wiring; remove the markers and any duplicated legacy snippets.
+4. Re-run the relevant tests (`python -m pytest sentinel/tests/block6`) to confirm the resolved file still passes synthetic coverage for policy, dialog, dependency handling, and the long-horizon engine.
+5. Stage and commit once all conflicts are cleared.
+
+These steps ensure the governed long-horizon features remain intact when merging upstream work.
+
 ## Long-Horizon Project Engine
 
 The `LongHorizonProjectEngine` orchestrates durable project records, dependency-aware planning, policy enforcement, and dialog outputs.
