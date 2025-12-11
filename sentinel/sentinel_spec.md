@@ -200,3 +200,33 @@ flowchart LR
 - Worker, AutonomyLoop, Controller updated for policy enforcement and replanning.
 - Added WorldModel foundation layer with domain registry, resource/dependency graphs, dialog integration, and planner metadata enrichment.
 - Added conversation pipeline (IntentEngine, NL→TaskGraph, ConversationController), AutonomyLoop graph execution, GUI chat/insight panels, and GUI bridge controls for simulation-only runs and rollbacks.
+
+## BLOCK 6 — LONG-HORIZON PROJECT ENGINE (ADDED)
+
+### New Components
+
+- `ProjectMemory`
+- `LongHorizonProjectEngine`
+- `ProjectDependencyGraph`
+- `PolicyEngine`
+- `DialogManager`
+
+### New Capabilities
+
+- Multi-day project reasoning
+- Versioned persistent goals
+- Dependency-aware scheduling
+- Project-level reflections
+- Autonomy constraints and refinement limits
+- Human-readable progress & issue reporting
+
+### New Data Flow
+
+AutonomyLoop → ProjectEngine → PolicyEngine → Planner → ExecutionController → ReflectionEngine → ProjectEngine → DialogManager
+
+### Operational Notes
+
+- `LongHorizonProjectEngine` composes `ProjectMemory`, `PolicyEngine`, `ProjectDependencyGraph`, and `DialogManager` to deliver governed long-horizon runs.
+- Plans must be cycle-free with resolved dependencies; depth is computed automatically when absent and compared against policy thresholds.
+- `ProjectMemory` enforces schema validation and atomic, versioned writes for goals, plans, dependency graphs, execution logs, and reflections.
+- `DialogManager` can emit composite reports combining overview, progress, and dependency diagnostics for human operators.
