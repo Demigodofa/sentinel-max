@@ -18,12 +18,14 @@ graph TD
     Controller --> Autonomy[AutonomyLoop]
     Controller --> MultiAgent[MultiAgentEngine]
     Autonomy --> Planner[AdaptivePlanner]
+    Autonomy --> ExecController[ExecutionController]
+    ExecController --> Approval[ApprovalGate]
+    ExecController --> Worker
     Planner --> Plan[TaskGraph]
     Planner --> MemoryIntelligence
     Planner --> WorldModel
     Dialog --> WorldModel
     MemoryIntelligence[Memory Context Builder] --> Planner
-    Autonomy --> Worker
     MultiAgent --> Planner
     MultiAgent --> Critic[Critic Agent]
     MultiAgent --> Simulation[Simulation Agent]
@@ -39,10 +41,13 @@ graph TD
     SimulationSandbox --> WorldModel
     Policy --> Planner
     Policy --> Worker
+    Policy --> ExecController
     ToolRegistry -->|execute| Tools[Built-in / Dynamic Tools]
     SimulationSandbox --> Planner
     Executor --> Trace[ExecutionTrace]
+    ExecController --> RealTrace[ExecutionTrace (real)]
     Trace --> ReflectionEngine
+    RealTrace --> ReflectionEngine
     SimulationSandbox --> ReflectionEngine
     ReflectionEngine --> Memory[MemoryManager]
     Planner --> Memory
@@ -70,6 +75,48 @@ graph TD
 - **Self-Modification guardrails**: `PatchAuditor`, `SelfModificationEngine`, and `HotReloader` vet and apply code patches with banned-token checks and safe reload hooks.
 - **Multi-Agent Layer (`agents/multi_agent_engine.py`)**: `MultiAgentEngine` wires PlannerAgent (first-pass plans + capability metadata), CriticAgent (hole detection, missing tools), SimulationAgent (sandbox previews), OptimizationAgent (parallelization and warning mitigation), ResearchAgent (knowledge fills via world-model alignment), and ToolEvolutionAgent (gap detection, candidate generation, simulation/benchmarking, autonomy enforcement). Decisions and feedback are written to memory namespaces such as `plan_feedback`, `goal_assessments`, and `tool_evolution`.
 
+### Execution Subsystem
+- **ExecutionController (`execution/execution_controller.py`)**: Executes `TaskGraph` nodes in topological order under multiple `ExecutionMode` values (`until_complete`, `for_time`, `until_node`, `for_cycles`, `until_condition`, `with_checkins`). Validates simulations, enforces `PolicyEngine` runtime limits, requests approval via `ApprovalGate`, dispatches real runs to `Worker.execute_node_real`, triggers periodic check-ins through `DialogManager`, and logs results to `MemoryManager` under `execution_real`.
+- **ApprovalGate (`execution/approval_gate.py`)**: Tracks pending approval text and approval state, prompts the `DialogManager`, and gates real execution checks in both `ExecutionController` and `Worker`.
+- **DialogManager integration**: Presents approval prompts and execution status notifications via `prompt_execution_approval` and `notify_execution_status`, persisting concise updates to symbolic memory for audit.
+- **Execution Modes**: Time-bound, cycle-bound, target-node, predicate, and check-in driven modes provide bounded autonomy for real actions. Modes are user-selectable through `AutonomyLoop.run` and delegated to `ExecutionController.request_execution`.
+- **Logging and reflection**: Real execution traces are written to `execution_real`; `AutonomyLoop` reflects on these traces after every run to keep operational memory up to date.
+
+```mermaid
+sequenceDiagram
+    AutonomyLoop->>ExecutionController: request_execution(mode, parameters)
+    ExecutionController->>ApprovalGate: request_approval(task)
+    ExecutionController->>PolicyEngine: check_runtime_limits / check_execution_allowed
+    ExecutionController->>Worker: execute_node_real(node, context)
+    Worker->>Sandbox: execute(tool, args)
+    Worker-->>ExecutionController: ExecutionResult
+    ExecutionController->>DialogManager: notify_execution_status
+    ExecutionController->>MemoryManager: store execution_real logs
+    ExecutionController-->>AutonomyLoop: ExecutionTrace
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> ApprovalRequested
+    ApprovalRequested --> Approved: approve()
+    ApprovalRequested --> Denied: deny()
+    Approved --> Approved: request_approval (pre-approved)
+    Denied --> ApprovalRequested: request_approval
+    Approved --> [*]
+    Denied --> [*]
+```
+
+```mermaid
+flowchart LR
+    Start --> Mode{ExecutionMode}
+    Mode -->|until_complete| RunAll[Execute until graph drained]
+    Mode -->|for_time| RunTime[Execute until seconds elapsed]
+    Mode -->|until_node| RunTarget[Stop when target node finishes]
+    Mode -->|for_cycles| RunCycles[Stop after N executions]
+    Mode -->|until_condition| RunPredicate[Stop when predicate true]
+    Mode -->|with_checkins| RunCheckins[Run with periodic status prompts]
+```
+
 ### Tool Autonomy and Evolution
 - **ToolAutonomyPolicy (`tools/tool_autonomy_policy.py`)**: Configures `autonomy_mode` (`ask`, `review`, `autonomous`) plus gates for benchmark improvement, simulation success, and policy approval. MultiAgentEngine consumes this policy when evaluating new tools.
 - **ToolEvolutionAgent**: Detects missing or unbound tools in task graphs, generates candidate tool specs from world-model gaps, simulates candidates inside `SimulationSandbox`, estimates performance via `BenchmarkFacade`, compares against existing tools when provided, and applies acceptance rules. Acceptance requires simulation success, policy approval (permissions subset), and non-regressing benchmarks when enabled. Modes:
@@ -91,8 +138,8 @@ graph TD
 - Persists world knowledge to symbolic memory (cached at startup, incrementally updated) so planning and dialog context share consistent state.
 
 ### Policy Layer (`policy/policy_engine.py`)
-- Applies safety and preference policies: enforces tool metadata presence, permission allowlist, determinism-first preference (disabling parallelism for non-deterministic tools), parallel execution limits, artifact collision checks, unsafe argument detection, and cycle/unresolved-input rejection via validator integration.
-- Integrates with planner (plan shaping), worker (execution blocking), and reflection (policy advice). Logs policy blocks/relaxations/recommendations to `policy_events`.
+- Applies safety and preference policies: enforces tool metadata presence, permission allowlist, determinism-first preference (disabling parallelism for non-deterministic tools), parallel execution limits, artifact collision checks, unsafe argument detection, runtime limits (max time, cycles, consecutive failures), real-tool allowlists, and cycle/unresolved-input rejection via validator integration.
+- Integrates with planner (plan shaping), worker (execution blocking), execution controller (runtime/approval constraints), and reflection (policy advice). Logs policy blocks/relaxations/recommendations to `policy_events`.
 
 ### Tooling
 - **Registry (`tools/registry.py`)**: Thread-safe registry validating `ToolSchema` metadata (semver versioning, permissions, determinism, forbidden builtins) before registration. Supports dynamic loading (`load_dynamic`), lookup (`get`, `call`, `list_tools`, `has_tool`, `describe_tools`), and pre-registers `BrowserAgent`.
@@ -110,10 +157,11 @@ graph TD
 2. WorldModel classifies the goal into a domain, surfaces capabilities, predicts required resources, and stores dependencies in symbolic memory for downstream components.
 3. NL→TaskGraph translation builds validated `TaskGraph` DAGs (including validation/benchmark nodes) using world-model hints, tool metadata, policy guidance, and multi-agent feedback; graphs stored in `task_graphs`/`plans` with semantic metadata and reasoning traces in `planning_traces`.
 4. PolicyEngine evaluates plans (permissions, determinism, parallelism, artifact collisions) before execution.
-5. Worker executes dependency-ordered batches via `TopologicalExecutor` through the sandboxed tool registry; simulations run before real calls and are stored to `simulations`; policy checks guard each node; results and errors written to `execution` namespace with batch ordering.
-6. Autonomy loop enforces cycle/time/failure bounds, detects repeat plans, updates goals on failure, and injects typed reflections when progress stalls; reflections may trigger replanning.
-7. ReflectionEngine summarizes `ExecutionTrace`, merges simulation warnings/predictions, proposes plan adjustments, and stores structured reflections plus legacy summaries under typed namespaces.
-8. MemoryManager + MemoryIntelligence maintain synchronized symbolic/vector stores and curated contexts; `export_state` exposes both stores and tool metadata for inspection.
+5. ExecutionController iterates nodes in topological order, validates simulations, enforces runtime limits, requests approvals, dispatches `execute_node_real` to `Worker`, and writes real execution logs to `execution_real` while DialogManager issues status updates.
+6. Worker executes dependency-ordered batches via `TopologicalExecutor` through the sandboxed tool registry; simulations run before real calls and are stored to `simulations`; policy checks guard each node; results and errors written to `execution` namespace with batch ordering.
+7. Autonomy loop enforces mode-specific bounds, detects repeat plans, updates goals on failure, and injects typed reflections when progress stalls; reflections may trigger replanning.
+8. ReflectionEngine summarizes `ExecutionTrace`, merges simulation warnings/predictions, proposes plan adjustments, and stores structured reflections plus legacy summaries under typed namespaces.
+9. MemoryManager + MemoryIntelligence maintain synchronized symbolic/vector stores and curated contexts; `export_state` exposes both stores and tool metadata for inspection.
 
 **Invariants and Safety Guarantees**
 - Tool names are unique; registration rejects duplicates and non-Tool instances. Tool metadata must exist for execution.
@@ -121,6 +169,8 @@ graph TD
 - TaskGraph validation prevents cycles/dangling requirements; TaskGraph metadata always includes origin goal and reasoning trace when produced by AdaptivePlanner.
 - Memory writes are namespaced and timestamped; policy/memory context/rank reports are auditable.
 - Autonomy loop halts on failures, timeouts, or empty plans; recovery paths are deterministic and logged; reflections provide confidence scores guiding termination.
+- ApprovalGate must be satisfied before any real tool invocation; `PolicyEngine` enforces runtime limits (time, cycles, consecutive failures) and per-tool allowlists before `Worker.execute_node_real` runs.
+- Real execution traces are stored under `execution_real` with task/tool/success metadata for reflective analysis and auditing.
 
 ## Consistency Checks
 - **Unit tests**: `python -m unittest discover sentinel/tests` exercises adaptive planning, policy enforcement, memory intelligence, reflection adjustments, and policy-blocked execution paths.

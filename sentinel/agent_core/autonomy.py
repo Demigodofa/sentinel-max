@@ -1,7 +1,6 @@
 """Adaptive multi-cycle autonomy loop."""
 from __future__ import annotations
 
-import time
 from typing import Any, Dict, Optional
 
 from sentinel.agent_core.base import ExecutionTrace
@@ -11,6 +10,7 @@ from sentinel.memory.memory_manager import MemoryManager
 from sentinel.planning.adaptive_planner import AdaptivePlanner
 from sentinel.planning.task_graph import TaskGraph
 from sentinel.agent_core.reflection import Reflector
+from sentinel.execution.execution_controller import ExecutionController, ExecutionMode
 
 log = get_logger(__name__)
 
@@ -22,6 +22,7 @@ class AutonomyLoop:
         self,
         planner: AdaptivePlanner,
         worker: Worker,
+        execution_controller: ExecutionController,
         reflector: Reflector,
         memory: MemoryManager,
         interval: float = 0.5,
@@ -32,6 +33,7 @@ class AutonomyLoop:
     ) -> None:
         self.planner = planner
         self.worker = worker
+        self.execution_controller = execution_controller
         self.reflector = reflector
         self.memory = memory
         self.interval = interval
@@ -50,69 +52,28 @@ class AutonomyLoop:
         self._running = False
 
     def run(
-        self,
-        goal: str,
-        cycle_limit: Optional[int] = None,
-        timeout: Optional[float] = None,
-        exit_conditions: Optional[Dict[str, Any]] = None,
+        self, taskgraph, execution_mode: ExecutionMode, parameters: Dict[str, Any]
     ) -> ExecutionTrace:
-        """Run planner → worker → reflection cycles until exit conditions are met."""
+        """Execute a taskgraph using the execution controller then reflect."""
 
-        cycle_limit = cycle_limit or self.cycle_limit
-        timeout = timeout if timeout is not None else self.timeout
-        exit_conditions = exit_conditions or {}
-
-        trace = ExecutionTrace()
         self._running = True
-        current_goal = goal
-        failed_cycles = 0
-        start_time = time.time()
-        self.memory.store_text(goal, namespace="goals", metadata={"type": "user_goal"})
-        previous_signature = None
+        goal = None
+        graph = taskgraph
+        if isinstance(taskgraph, str):
+            goal = taskgraph
+            graph = self.planner.plan(taskgraph, reflection=self.last_reflection)
+        elif hasattr(graph, "metadata"):
+            goal = graph.metadata.get("origin_goal") if isinstance(graph.metadata, dict) else None
 
-        for cycle in range(1, cycle_limit + 1):
-            if not self._running:
-                break
-            if timeout is not None and (time.time() - start_time) >= timeout:
-                log.info("AutonomyLoop: timeout reached; stopping.")
-                break
-
-            graph = self.planner.plan(current_goal, reflection=self.last_reflection)
-            signature = graph.signature()
-            if previous_signature == signature:
-                failed_cycles += 1
-                self._record_reflection(trace, "strategic", "Repeated plan detected", current_goal)
-                if failed_cycles >= self.max_failed_cycles:
-                    log.warning("AutonomyLoop: repeat-plan guard triggered.")
-                    break
-            previous_signature = signature
-
-            cycle_trace = self.worker.run(graph)
-            self._merge_trace(trace, cycle_trace)
-            reflection = self._record_reflection(cycle_trace, "operational", f"cycle_{cycle}", current_goal)
-            if reflection and reflection.get("plan_adjustment", {}).get("action") == "replan":
-                current_goal = self._update_goal(current_goal, cycle_trace)
-                previous_signature = None
-                continue
-
-            if not cycle_trace.failed_nodes and self._goal_completed(exit_conditions, cycle_trace):
-                self._record_reflection(cycle_trace, "user-preference", "goal-complete", current_goal)
-                self.stop()
-                break
-
-            if cycle_trace.failed_nodes:
-                failed_cycles += 1
-                self._record_reflection(cycle_trace, "self-model", "tool-failure", current_goal)
-                if failed_cycles >= self.max_failed_cycles:
-                    log.error("AutonomyLoop: too many failed cycles; stopping.")
-                    break
-                current_goal = self._update_goal(current_goal, cycle_trace)
-                continue
-
-            # Strategic reflection for continued progress
-            self._record_reflection(trace, "strategic", f"cycle_{cycle}_progress", current_goal)
-            time.sleep(self.interval)
-
+        trace = self.execution_controller.request_execution(graph, execution_mode, parameters or {})
+        self.memory.store_text(
+            trace.summary(),
+            namespace="execution.real_trace",
+            metadata={"mode": execution_mode.value, "goal": goal},
+        )
+        reflection = self._record_reflection(trace, "operational", execution_mode.value, goal)
+        if reflection:
+            self.last_reflection = reflection
         self.stop()
         return trace
 

@@ -57,12 +57,21 @@ class SentinelController:
             policy_engine=self.policy_engine,
             simulation_sandbox=self.simulation_sandbox,
             world_model=self.world_model,
+            approval_gate=self.approval_gate,
+        )
+        self.execution_controller = ExecutionController(
+            self.worker,
+            self.policy_engine,
+            self.approval_gate,
+            self.dialog_manager,
+            self.memory,
         )
         self.reflection_engine = ReflectionEngine(self.memory, policy_engine=self.policy_engine, memory_context_builder=self.memory_context_builder)
         self.reflector = Reflector(self.memory, self.reflection_engine)
         self.autonomy = AutonomyLoop(
             self.planner,
             self.worker,
+            self.execution_controller,
             self.reflector,
             self.memory,
             cycle_limit=3,
