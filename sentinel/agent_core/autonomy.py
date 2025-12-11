@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
+import time
 
 from sentinel.agent_core.base import ExecutionTrace
 from sentinel.agent_core.worker import Worker
@@ -42,6 +43,29 @@ class AutonomyLoop:
         self.timeout = timeout
         self.max_failed_cycles = max_failed_cycles
         self.last_reflection: Dict[str, Any] | None = None
+
+    # ------------------------------------------------------------
+    # PROJECT-LEVEL AUTONOMY LOOP
+    # ------------------------------------------------------------
+
+    def run_project_cycle(self, project_engine, project_id: str) -> Dict[str, Any]:
+        """
+        Execute one long-horizon cycle:
+        - load project
+        - build/validate plan
+        - run dependency-ordered execution
+        - reflect + refine
+        """
+
+        cycle_start = time.time()
+
+        result = project_engine.run_project_cycle(project_id)
+
+        cycle_end = time.time()
+        elapsed = cycle_end - cycle_start
+
+        result["cycle_time_sec"] = elapsed
+        return result
 
     def start(self) -> None:
         log.info("AutonomyLoop: starting.")
