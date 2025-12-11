@@ -21,6 +21,7 @@ from sentinel.tools.microservice_builder import MICROSERVICE_BUILDER_TOOL
 from sentinel.tools.registry import DEFAULT_TOOL_REGISTRY
 from sentinel.tools.tool_generator import generate_echo_tool
 from sentinel.tools.web_search import WEB_SEARCH_TOOL
+from sentinel.simulation.sandbox import SimulationSandbox
 from sentinel.world.model import WorldModel
 
 logger = get_logger(__name__)
@@ -32,6 +33,7 @@ class SentinelController:
         self.world_model = WorldModel(self.memory)
         self.tool_registry = DEFAULT_TOOL_REGISTRY
         self.sandbox = Sandbox()
+        self.simulation_sandbox = SimulationSandbox(self.tool_registry)
         self.memory_context_builder = MemoryContextBuilder(self.memory)
         self.policy_engine = PolicyEngine(self.memory)
         self._register_default_tools()
@@ -44,9 +46,15 @@ class SentinelController:
             policy_engine=self.policy_engine,
             memory_context_builder=self.memory_context_builder,
             world_model=self.world_model,
+            simulation_sandbox=self.simulation_sandbox,
         )
         self.worker = Worker(
-            self.tool_registry, self.sandbox, memory=self.memory, policy_engine=self.policy_engine
+            self.tool_registry,
+            self.sandbox,
+            memory=self.memory,
+            policy_engine=self.policy_engine,
+            simulation_sandbox=self.simulation_sandbox,
+            world_model=self.world_model,
         )
         self.reflection_engine = ReflectionEngine(self.memory, policy_engine=self.policy_engine, memory_context_builder=self.memory_context_builder)
         self.reflector = Reflector(self.memory, self.reflection_engine)

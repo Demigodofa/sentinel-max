@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sentinel.planning.task_graph import TaskNode
+    from sentinel.simulation.sandbox import SimulationResult
 
 
 @dataclass
@@ -61,6 +61,7 @@ class ExecutionResult:
     output: Any = None
     error: Optional[str] = None
     attempted_recovery: bool = False
+    simulation: Optional["SimulationResult"] = None
 
 
 @dataclass
@@ -89,6 +90,10 @@ class ExecutionTrace:
                 recovery_note = " (after recovery)" if res.attempted_recovery else ""
                 parts.append(
                     f"Task {res.node.id} failed{recovery_note}: {res.error}"
+                )
+            if res.simulation and res.simulation.warnings:
+                parts.append(
+                    f"Simulated warnings for {res.node.id}: {', '.join(res.simulation.warnings)}"
                 )
         batches_repr = (
             f" | batches={','.join('[' + ','.join(batch) + ']' for batch in self.batches)}"

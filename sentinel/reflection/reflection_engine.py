@@ -26,7 +26,12 @@ class ReflectionEngine:
 
     def reflect(self, trace: Any, reflection_type: str = "operational", goal: str | None = None) -> Dict[str, Any]:
         issues = self._detect_issues(trace)
-        suggestions = self._suggest_improvements(trace, issues)
+        simulation_insights = self._simulation_insights(trace)
+        if simulation_insights.get("warnings"):
+            issues.append("simulation_warnings")
+        if simulation_insights.get("predicted_failures"):
+            issues.append("simulation_failures")
+        suggestions = self._suggest_improvements(trace, issues, simulation_insights)
         plan_adjustment = self._plan_adjustment(trace, issues)
         summary = self._summarize(trace, issues, suggestions)
         context = self._memory_context(goal) if goal else ""
@@ -39,6 +44,7 @@ class ReflectionEngine:
             "context": context,
             "reflection_type": reflection_type,
             "confidence": self._confidence(trace, issues),
+            "simulation": simulation_insights,
         }
         self._persist(reflection, reflection_type)
         decision = self.policy_engine.advise(issues)
@@ -58,12 +64,18 @@ class ReflectionEngine:
             issues.append("no_results")
         return issues
 
-    def _suggest_improvements(self, trace: Any, issues: List[str]) -> List[str]:
+    def _suggest_improvements(self, trace: Any, issues: List[str], simulation: Dict[str, Any]) -> List[str]:
         suggestions: List[str] = []
         if "execution_failures" in issues:
             suggestions.append("Retry failed tasks with adjusted inputs")
         if "no_results" in issues:
             suggestions.append("Expand search scope or enrich inputs")
+        if simulation.get("warnings"):
+            suggestions.append("Resolve simulation warnings before live execution")
+        if simulation.get("predicted_failures"):
+            suggestions.append("Reorder or adjust tasks flagged by simulation")
+        if simulation.get("slow_paths"):
+            suggestions.append("Optimize predicted slow tasks using benchmark notes")
         if not suggestions:
             suggestions.append("Continue current strategy")
         return suggestions
@@ -81,6 +93,25 @@ class ReflectionEngine:
         if issues:
             base -= 0.2 * len(issues)
         return max(base, 0.1)
+
+    def _simulation_insights(self, trace: Any) -> Dict[str, Any]:
+        warnings: List[str] = []
+        predicted_failures: List[str] = []
+        slow_paths: List[str] = []
+        for result in getattr(trace, "results", []) or []:
+            simulation = getattr(result, "simulation", None)
+            if not simulation:
+                continue
+            warnings.extend(simulation.warnings)
+            if not simulation.success:
+                predicted_failures.append(result.node.id)
+            if simulation.benchmark.get("relative_speed", 10) < 5:
+                slow_paths.append(result.node.id)
+        return {
+            "warnings": warnings,
+            "predicted_failures": predicted_failures,
+            "slow_paths": slow_paths,
+        }
 
     def _memory_context(self, goal: str) -> str:
         _, context_block = self.memory_context_builder.build_context(goal, "reflection", limit=3)

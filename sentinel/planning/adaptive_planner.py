@@ -38,6 +38,7 @@ class AdaptivePlanner:
         policy_engine: PolicyEngine,
         memory_context_builder: Optional[MemoryContextBuilder] = None,
         world_model: Optional["WorldModel"] = None,
+        simulation_sandbox=None,
     ) -> None:
         self.tool_registry = tool_registry
         self.memory = memory
@@ -45,6 +46,7 @@ class AdaptivePlanner:
         self.validator = GraphValidator(tool_registry)
         self.memory_context_builder = memory_context_builder or MemoryContextBuilder(memory)
         self.world_model = world_model
+        self.simulation_sandbox = simulation_sandbox
 
     # ------------------------------------------------------------------
     # Public API
@@ -54,6 +56,7 @@ class AdaptivePlanner:
             plan_context = self._analyze_goal(goal)
             subgoals = self._generate_subgoals(plan_context, reflection)
             graph = self._build_graph(plan_context, subgoals)
+            self._score_with_simulation(graph)
             self.policy_engine.evaluate_plan(graph, self.tool_registry)
             self.validator.validate(graph)
             self._record_plan(goal, graph, plan_context)
@@ -61,6 +64,7 @@ class AdaptivePlanner:
         except Exception as exc:
             logger.warning("Adaptive planning failed, using deterministic fallback: %s", exc)
             fallback = self._deterministic_plan(goal)
+            self._score_with_simulation(fallback)
             self.policy_engine.evaluate_plan(fallback, self.tool_registry)
             self.validator.validate(fallback)
             self._record_plan(goal, fallback, PlanContext(goal, "fallback", [], ""))
@@ -185,6 +189,39 @@ class AdaptivePlanner:
         graph = TaskGraph(nodes, metadata=metadata)
         return graph
 
+    def _score_with_simulation(self, graph: TaskGraph) -> None:
+        if not self.simulation_sandbox:
+            return
+        simulations = self.simulation_sandbox.simulate_taskgraph(graph, self.world_model)
+        side_effects: Dict[str, List[str]] = {}
+        warning_map: Dict[str, List[str]] = {}
+        for node_id, result in simulations.items():
+            if result.predicted_vfs_changes:
+                side_effects[node_id] = list(result.predicted_vfs_changes.keys())
+                graph.get(node_id).parallelizable = False
+            if result.warnings:
+                warning_map[node_id] = result.warnings
+            if not result.success:
+                raise ValueError(
+                    f"Simulation failed for {node_id}: {', '.join(result.warnings) or 'unknown warning'}"
+                )
+
+        graph.add_metadata(
+            simulation_predictions={
+                node_id: {
+                    "predicted_outputs": result.predicted_outputs,
+                    "predicted_vfs_changes": result.predicted_vfs_changes,
+                    "benchmark": result.benchmark,
+                    "warnings": result.warnings,
+                    "success": result.success,
+                }
+                for node_id, result in simulations.items()
+            },
+            simulation_side_effects=side_effects,
+            simulation_warnings=warning_map,
+            plan_score=self._score_from_simulation(simulations),
+        )
+
     def _select_tool(self, subgoal: str, goal: str) -> Tuple[Optional[str], Dict[str, Any], Optional[str]]:
         if "analyze" in subgoal and self.tool_registry.has_tool("code_analyzer"):
             return "code_analyzer", {"code": goal}, "code_assessment"
@@ -211,6 +248,14 @@ class AdaptivePlanner:
             f"resources={','.join(plan_context.resources)}; used memories={len(plan_context.memories)}; "
             f"tools={';'.join(tool_descriptions)}"
         )
+
+    def _score_from_simulation(self, simulations: Dict[str, Any]) -> float:
+        if not simulations:
+            return 0.0
+        total = len(simulations)
+        warnings = sum(1 for result in simulations.values() if result.warnings)
+        successes = sum(1 for result in simulations.values() if result.success)
+        return round((successes - 0.5 * warnings) / total, 2)
 
     def _record_plan(self, goal: str, graph: TaskGraph, context: PlanContext) -> None:
         try:
