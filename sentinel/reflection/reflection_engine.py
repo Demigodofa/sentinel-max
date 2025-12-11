@@ -1,0 +1,97 @@
+"""Reflection engine with multi-dimensional reasoning."""
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+from sentinel.logging.logger import get_logger
+from sentinel.memory.intelligence import MemoryContextBuilder
+from sentinel.memory.memory_manager import MemoryManager
+from sentinel.policy.policy_engine import PolicyEngine
+
+logger = get_logger(__name__)
+
+
+class ReflectionEngine:
+    """Generate actionable reflections that can drive replanning."""
+
+    def __init__(
+        self,
+        memory: MemoryManager,
+        policy_engine: PolicyEngine,
+        memory_context_builder: Optional[MemoryContextBuilder] = None,
+    ) -> None:
+        self.memory = memory
+        self.policy_engine = policy_engine
+        self.memory_context_builder = memory_context_builder or MemoryContextBuilder(memory)
+
+    def reflect(self, trace: Any, reflection_type: str = "operational", goal: str | None = None) -> Dict[str, Any]:
+        issues = self._detect_issues(trace)
+        suggestions = self._suggest_improvements(trace, issues)
+        plan_adjustment = self._plan_adjustment(trace, issues)
+        summary = self._summarize(trace, issues, suggestions)
+        context = self._memory_context(goal) if goal else ""
+        reflection = {
+            "summary": summary,
+            "issues_detected": issues,
+            "improvement_suggestions": suggestions,
+            "root_cause": issues[0] if issues else "none",
+            "plan_adjustment": plan_adjustment,
+            "context": context,
+            "reflection_type": reflection_type,
+            "confidence": self._confidence(trace, issues),
+        }
+        self._persist(reflection, reflection_type)
+        decision = self.policy_engine.advise(issues)
+        if not decision.allowed:
+            reflection["policy_advice"] = decision.to_dict()
+        return reflection
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _detect_issues(self, trace: Any) -> List[str]:
+        issues: List[str] = []
+        failed = getattr(trace, "failed_nodes", []) or []
+        if failed:
+            issues.append("execution_failures")
+        if not getattr(trace, "results", []):
+            issues.append("no_results")
+        return issues
+
+    def _suggest_improvements(self, trace: Any, issues: List[str]) -> List[str]:
+        suggestions: List[str] = []
+        if "execution_failures" in issues:
+            suggestions.append("Retry failed tasks with adjusted inputs")
+        if "no_results" in issues:
+            suggestions.append("Expand search scope or enrich inputs")
+        if not suggestions:
+            suggestions.append("Continue current strategy")
+        return suggestions
+
+    def _plan_adjustment(self, trace: Any, issues: List[str]) -> Dict[str, Any]:
+        if not issues:
+            return {"action": "none"}
+        return {"action": "replan", "focus": issues}
+
+    def _summarize(self, trace: Any, issues: List[str], suggestions: List[str]) -> str:
+        return f"Trace results={len(getattr(trace, 'results', []))}, issues={issues}, suggestions={suggestions}"
+
+    def _confidence(self, trace: Any, issues: List[str]) -> float:
+        base = 0.8
+        if issues:
+            base -= 0.2 * len(issues)
+        return max(base, 0.1)
+
+    def _memory_context(self, goal: str) -> str:
+        _, context_block = self.memory_context_builder.build_context(goal, "reflection", limit=3)
+        return context_block
+
+    def _persist(self, reflection: Dict[str, Any], reflection_type: str) -> None:
+        try:
+            self.memory.store_text(
+                str(reflection),
+                namespace=f"reflection.{reflection_type}",
+                metadata={"summary": reflection.get("summary", ""), "confidence": reflection.get("confidence")},
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("Failed to persist reflection: %s", exc)

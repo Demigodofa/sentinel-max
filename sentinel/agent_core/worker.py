@@ -8,6 +8,7 @@ from sentinel.agent_core.sandbox import Sandbox
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.planning.task_graph import TaskGraph, TopologicalExecutor
+from sentinel.policy.policy_engine import PolicyEngine
 from sentinel.tools.registry import ToolRegistry
 
 logger = get_logger(__name__)
@@ -15,12 +16,18 @@ logger = get_logger(__name__)
 
 class Worker:
     def __init__(
-        self, tool_registry: ToolRegistry, sandbox: Sandbox, memory: Optional[MemoryManager] = None
+        self,
+        tool_registry: ToolRegistry,
+        sandbox: Sandbox,
+        memory: Optional[MemoryManager] = None,
+        policy_engine: PolicyEngine | None = None,
     ) -> None:
         self.tool_registry = tool_registry
         self.sandbox = sandbox
         self.memory = memory
-        self.executor = TopologicalExecutor(tool_registry, sandbox, memory=memory)
+        self.executor = TopologicalExecutor(
+            tool_registry, sandbox, memory=memory, policy_engine=policy_engine
+        )
 
     def run(self, graph: TaskGraph) -> ExecutionTrace:
         logger.info("Worker executing task graph with %d nodes", len(graph.nodes))
