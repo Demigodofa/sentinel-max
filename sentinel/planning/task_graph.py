@@ -28,8 +28,11 @@ class TaskNode:
 class TaskGraph:
     """DAG container for :class:`TaskNode` definitions."""
 
-    def __init__(self, nodes: Optional[Iterable[TaskNode]] = None) -> None:
+    def __init__(
+        self, nodes: Optional[Iterable[TaskNode]] = None, metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
         self.nodes: Dict[str, TaskNode] = {}
+        self.metadata: Dict[str, Any] = metadata or {}
         for node in nodes or []:
             self.add_node(node)
 
@@ -43,6 +46,9 @@ class TaskGraph:
 
     def __iter__(self):
         return iter(self.nodes.values())
+
+    def add_metadata(self, **metadata: Any) -> None:
+        self.metadata.update(metadata)
 
     def signature(self) -> Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...]:
         """Compact signature for repeat-plan detection."""
@@ -162,12 +168,18 @@ class TopologicalExecutor:
     """Execute a :class:`TaskGraph` respecting dependencies."""
 
     def __init__(
-        self, registry: ToolRegistry, sandbox: Sandbox, memory=None, validator: GraphValidator | None = None
+        self,
+        registry: ToolRegistry,
+        sandbox: Sandbox,
+        memory=None,
+        validator: GraphValidator | None = None,
+        policy_engine=None,
     ) -> None:
         self.registry = registry
         self.sandbox = sandbox
         self.memory = memory
         self.validator = validator or GraphValidator(registry)
+        self.policy_engine = policy_engine
 
     def execute(self, graph: TaskGraph, available_inputs: Optional[Dict[str, Any]] = None) -> ExecutionTrace:
         available_inputs = available_inputs or {}
@@ -197,6 +209,17 @@ class TopologicalExecutor:
                     continue
 
                 args = self._resolve_args(node, artifacts)
+                if self.policy_engine:
+                    try:
+                        self.policy_engine.validate_execution(node, self.registry)
+                    except Exception as exc:  # pragma: no cover - defensive safety
+                        result = ExecutionResult(node=node, success=False, error=str(exc))
+                        failed.add(node.id)
+                        trace.add(result)
+                        if self.memory:
+                            self._record_memory(result)
+                        self._update_neighbors(node.id, dependencies, indegree, ready)
+                        continue
                 result = self._run_with_recovery(node, args)
                 if result.success:
                     executed.add(node.id)

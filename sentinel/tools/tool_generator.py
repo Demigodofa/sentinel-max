@@ -3,10 +3,6 @@ from __future__ import annotations
 
 import ast
 from types import MappingProxyType
-from __future__ import annotations
-
-import ast
-from types import MappingProxyType
 from typing import Any, Callable, Dict, Optional
 
 from sentinel.agent_core.base import Tool

@@ -6,4 +6,5 @@ from sentinel.planning.task_graph import (  # noqa: F401
     TaskNode,
     TopologicalExecutor,
 )
+from sentinel.planning.adaptive_planner import AdaptivePlanner  # noqa: F401
 
