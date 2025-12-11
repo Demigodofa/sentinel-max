@@ -1,70 +1,74 @@
-# sentinel/project/dependency_graph.py
+"""Dependency tracking for long-horizon project plans."""
+from __future__ import annotations
 
-from typing import Dict, List, Any, Set
+from collections import defaultdict, deque
+from typing import Any, Dict, List, Set
 
 
 class ProjectDependencyGraph:
-    """
-    Builds and validates dependency graphs for long-horizon plans.
-    Detects:
-        - cycles
-        - unresolved dependencies
-        - invalid references
-    Supports:
-        - topological ordering
-        - multi-phase sequencing
-    """
+    """Build and analyze dependencies between planned project steps."""
 
     def build(self, plan: Dict[str, Any]) -> Dict[str, List[str]]:
-        graph = {}
+        graph: Dict[str, List[str]] = {}
         for step_id, step in plan.items():
-            graph[step_id] = step.get("depends_on", [])
+            deps = step.get("depends_on") or []
+            graph[step_id] = list(dict.fromkeys(deps))
         return graph
 
     def detect_cycles(self, graph: Dict[str, List[str]]) -> List[List[str]]:
         visited: Set[str] = set()
         stack: Set[str] = set()
-        cycles = []
+        cycles: List[List[str]] = []
 
-        def dfs(node: str, path: List[str]):
+        def visit(node: str, path: List[str]) -> None:
             if node in stack:
                 cycle_start = path.index(node)
-                cycles.append(path[cycle_start:])
+                cycles.append(path[cycle_start:] + [node])
                 return
             if node in visited:
                 return
             visited.add(node)
             stack.add(node)
             for dep in graph.get(node, []):
-                dfs(dep, path + [dep])
+                visit(dep, path + [dep])
             stack.remove(node)
 
-        for n in graph:
-            dfs(n, [n])
+        for node in graph:
+            if node not in visited:
+                visit(node, [node])
         return cycles
 
-    def find_unresolved(self, graph: Dict[str, List[str]]) -> List[str]:
-        unresolved = []
-        all_nodes = set(graph.keys())
+    def find_unresolved(self, graph: Dict[str, List[str]]) -> Dict[str, List[str]]:
+        nodes = set(graph.keys())
+        unresolved: Dict[str, List[str]] = {}
         for node, deps in graph.items():
-            for d in deps:
-                if d not in all_nodes:
-                    unresolved.append(d)
+            missing = [dep for dep in deps if dep not in nodes]
+            if missing:
+                unresolved[node] = missing
         return unresolved
 
     def topological_sort(self, graph: Dict[str, List[str]]) -> List[str]:
-        visited: Set[str] = set()
-        order: List[str] = []
+        indegree: Dict[str, int] = defaultdict(int)
+        adjacency: Dict[str, Set[str]] = defaultdict(set)
 
-        def dfs(node: str):
-            if node in visited:
-                return
-            visited.add(node)
-            for dep in graph.get(node, []):
-                dfs(dep)
-            order.append(node)
+        for node, deps in graph.items():
+            indegree.setdefault(node, 0)
+            for dep in deps:
+                if dep in graph:
+                    indegree[node] += 1
+                    adjacency[dep].add(node)
 
-        for n in graph:
-            dfs(n)
+        queue: deque[str] = deque(sorted([n for n, deg in indegree.items() if deg == 0]))
+        ordered: List[str] = []
 
-        return order
+        while queue:
+            current = queue.popleft()
+            ordered.append(current)
+            for neighbor in sorted(adjacency.get(current, set())):
+                indegree[neighbor] -= 1
+                if indegree[neighbor] == 0:
+                    queue.append(neighbor)
+
+        remaining = [n for n, deg in indegree.items() if deg > 0 and n not in ordered]
+        ordered.extend(sorted(remaining))
+        return ordered
