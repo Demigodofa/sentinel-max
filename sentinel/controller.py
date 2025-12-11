@@ -11,7 +11,10 @@ from sentinel.agent_core.patch_auditor import PatchAuditor
 from sentinel.agent_core.hot_reloader import HotReloader
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.tools.registry import DEFAULT_TOOL_REGISTRY
-from sentinel.tools import web_search, internet_extractor
+from sentinel.tools.web_search import WEB_SEARCH_TOOL
+from sentinel.tools.internet_extractor import INTERNET_EXTRACTOR_TOOL
+from sentinel.tools.code_analyzer import CODE_ANALYZER_TOOL
+from sentinel.tools.microservice_builder import MICROSERVICE_BUILDER_TOOL
 from sentinel.tools.tool_generator import generate_echo_tool
 from sentinel.logging.logger import get_logger
 
@@ -35,9 +38,11 @@ class SentinelController:
         self.hot_reloader = HotReloader()
 
     def _register_default_tools(self) -> None:
-        self.tool_registry.register("web_search", web_search.search)
-        self.tool_registry.register("internet_extract", internet_extractor.extract)
-        self.tool_registry.register("echo", generate_echo_tool(prefix="Echo: "))
+        self.tool_registry.register(WEB_SEARCH_TOOL)
+        self.tool_registry.register(INTERNET_EXTRACTOR_TOOL)
+        self.tool_registry.register(CODE_ANALYZER_TOOL)
+        self.tool_registry.register(MICROSERVICE_BUILDER_TOOL)
+        generate_echo_tool(prefix="Echo: ", registry=self.tool_registry)
 
     def process_input(self, message: str) -> str:
         logger.info("Processing user input: %s", message)
@@ -48,7 +53,7 @@ class SentinelController:
         return trace.summary()
 
     def export_state(self):
-        return {
-            "memory": self.memory.export_state(),
-            "tools": list(self.tool_registry.list_tools().keys()),
+        tools = {
+            name: getattr(tool, "description", "") for name, tool in self.tool_registry.list_tools().items()
         }
+        return {"memory": self.memory.export_state(), "tools": tools}

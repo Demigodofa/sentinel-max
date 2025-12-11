@@ -1,0 +1,66 @@
+"""Safe HTML scraper with multiple cleaning strategies."""
+from __future__ import annotations
+
+import ipaddress
+import re
+import socket
+from typing import Any, Dict
+from urllib.parse import urlparse
+
+import requests
+
+try:  # BeautifulSoup is optional
+    from bs4 import BeautifulSoup  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    BeautifulSoup = None
+
+from sentinel.agent_core.base import Tool
+
+
+class WebScraperTool(Tool):
+    def __init__(self) -> None:
+        super().__init__("web_scraper", "Fetch raw HTML and cleaned text from a URL")
+
+    def _is_safe_domain(self, url: str) -> None:
+        parsed = urlparse(url)
+        host = parsed.hostname
+        if not host:
+            raise ValueError("URL must include a hostname")
+        lowered = host.lower()
+        if lowered in {"localhost", "127.0.0.1", "0.0.0.0"}:
+            raise ValueError("Localhost access is not permitted")
+        try:
+            ip_obj = ipaddress.ip_address(lowered)
+            if ip_obj.is_private or ip_obj.is_loopback:
+                raise ValueError("Private or loopback addresses are not allowed")
+        except ValueError:
+            # Host is not a direct IP; resolve and check
+            try:
+                infos = socket.getaddrinfo(host, None)
+                for _, _, _, _, addr in infos:
+                    resolved_ip = addr[0]
+                    ip_obj = ipaddress.ip_address(resolved_ip)
+                    if ip_obj.is_private or ip_obj.is_loopback:
+                        raise ValueError("Resolved to private address; blocked")
+            except Exception:
+                # Resolution failures are treated as unsafe
+                raise ValueError("Unable to resolve host safely")
+
+    def _clean_html(self, html: str) -> str:
+        if BeautifulSoup is not None:
+            soup = BeautifulSoup(html, "html.parser")
+            return soup.get_text(" ", strip=True)
+        # Fallback: strip tags with regex and collapse whitespace
+        text = re.sub(r"<[^>]+>", " ", html)
+        return re.sub(r"\s+", " ", text).strip()
+
+    def execute(self, url: str, timeout: float = 5.0) -> Dict[str, Any]:
+        self._is_safe_domain(url)
+        headers = {"User-Agent": "SentinelMAX/1.0"}
+        response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
+        response.raise_for_status()
+        html = response.text
+        return {"url": url, "html": html, "text": self._clean_html(html)}
+
+
+WEB_SCRAPER_TOOL = WebScraperTool()
