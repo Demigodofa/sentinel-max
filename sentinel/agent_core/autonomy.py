@@ -31,6 +31,7 @@ class AutonomyLoop:
     def run(self, goal: str, max_time: Optional[float] = None) -> ExecutionTrace:
         start = time.time()
         self._running = True
+        self.memory.store_text(goal, namespace="goals", metadata={"type": "user_goal"})
         plan: Plan = self.planner.plan(goal)
         trace = ExecutionTrace()
 

@@ -2,8 +2,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Any
 from datetime import datetime
+from pathlib import Path
+from threading import RLock
+from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+from sentinel.memory.symbolic_memory import SymbolicMemory
+from sentinel.memory.vector_memory import VectorMemory
+from sentinel.logging.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -15,36 +24,109 @@ class MemoryRecord:
 
 
 class MemoryManager:
-    """Simple in-memory store for agent observations and reflections."""
+    """Unified interface combining symbolic and vector memories."""
 
-    def __init__(self) -> None:
-        self.records: List[MemoryRecord] = []
+    def __init__(
+        self,
+        storage_dir: str | Path | None = None,
+        embedding_model: Optional[str] = None,
+    ) -> None:
+        base_dir = Path(storage_dir) if storage_dir else Path(__file__).resolve().parent
+        base_dir.mkdir(parents=True, exist_ok=True)
+        self.symbolic = SymbolicMemory(base_dir / "symbolic_store.json")
+        self.vector = VectorMemory(model_name=embedding_model)
+        self._lock = RLock()
 
-    def add(self, category: str, content: str, **metadata: Any) -> MemoryRecord:
-        record = MemoryRecord(category=category, content=content, metadata=metadata)
-        self.records.append(record)
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def store_text(
+        self,
+        text: str,
+        namespace: str = "general",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Store a free-form text snippet in both symbolic and vector memories."""
+        timestamp = datetime.utcnow().isoformat()
+        metadata = metadata or {}
+        record_key = str(uuid4())
+        fact_value = {
+            "text": text,
+            "metadata": metadata,
+            "timestamp": timestamp,
+            "type": "text",
+        }
+        symbolic_record = self.symbolic.create(namespace, record_key, fact_value, allow_overwrite=True)
+        vector_id = self.vector.add(text, metadata={**metadata, "symbolic_key": record_key}, namespace=namespace)
+        logger.info("Stored text entry in namespace '%s' with key %s", namespace, record_key)
+        return {
+            "key": record_key,
+            "namespace": namespace,
+            "symbolic": symbolic_record,
+            "vector_id": vector_id,
+        }
+
+    def store_fact(
+        self,
+        namespace: str,
+        key: Optional[str],
+        value: Any,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Persist a structured fact in symbolic memory."""
+        fact_key = key or str(uuid4())
+        record = self.symbolic.create(namespace, fact_key, value, metadata=metadata, allow_overwrite=True)
+        logger.info("Stored fact '%s:%s'", namespace, fact_key)
         return record
 
-    def query(self, category: str | None = None) -> List[MemoryRecord]:
-        if category is None:
-            return list(self.records)
-        return [rec for rec in self.records if rec.category == category]
+    def query(self, namespace: Optional[str] = None, key: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Query facts by namespace and optional key."""
+        if namespace is None:
+            all_records: List[Dict[str, Any]] = []
+            for ns in self.symbolic.list_namespaces():
+                all_records.extend(self.symbolic.read(ns))
+            return sorted(all_records, key=lambda r: r.get("updated_at", ""))
+        return self.symbolic.read(namespace, key)
+
+    def recall_recent(self, limit: int = 5, namespace: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Return most recent symbolic entries, optionally filtered by namespace."""
+        if namespace:
+            records = self.symbolic.read(namespace)
+        else:
+            records = self.query()
+        sorted_records = sorted(records, key=lambda r: r.get("updated_at", ""), reverse=True)
+        return sorted_records[:limit]
+
+    def semantic_search(
+        self, query: str, top_k: int = 3, namespace: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        return self.vector.search(query, top_k=top_k, namespace=namespace)
+
+    # ------------------------------------------------------------------
+    # Compatibility helpers with legacy APIs
+    # ------------------------------------------------------------------
+    def add(self, category: str, content: str, **metadata: Any) -> MemoryRecord:
+        record = MemoryRecord(category=category, content=content, metadata=metadata)
+        self.store_text(content, namespace=category, metadata=metadata)
+        return record
 
     def latest(self, category: str | None = None) -> MemoryRecord | None:
-        for rec in reversed(self.records):
-            if category is None or rec.category == category:
-                return rec
-        return None
+        recent = self.recall_recent(limit=1, namespace=category)
+        if not recent:
+            return None
+        entry = recent[0]
+        content = entry.get("value", {}).get("text") if isinstance(entry.get("value"), dict) else entry.get("value")
+        if content is None:
+            content = entry.get("value", "")
+        timestamp_raw = entry.get("updated_at") or entry.get("created_at") or datetime.utcnow().isoformat()
+        try:
+            timestamp = datetime.fromisoformat(timestamp_raw)
+        except Exception:
+            timestamp = datetime.utcnow()
+        return MemoryRecord(category=entry.get("namespace", ""), content=str(content), metadata=entry.get("metadata", {}), timestamp=timestamp)
 
     def export_state(self) -> Dict[str, Any]:
         return {
-            "records": [
-                {
-                    "category": rec.category,
-                    "content": rec.content,
-                    "metadata": rec.metadata,
-                    "timestamp": rec.timestamp.isoformat(),
-                }
-                for rec in self.records
-            ]
+            "symbolic": self.symbolic.export_state(),
+            "vector": self.vector.export_state(),
         }
