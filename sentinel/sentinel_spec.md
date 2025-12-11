@@ -4,6 +4,7 @@
 - **Entry points**: `main.py` exposes CLI (`run_cli`), GUI (`run_gui`), and FastAPI server (`run_server`). Each mode constructs a `SentinelController` to orchestrate core subsystems.
 - **Controller**: `SentinelController` wires `MemoryManager`, `MemoryContextBuilder`, `WorldModel`, `DialogManager`, `PolicyEngine`, DAG `AdaptivePlanner`, `Worker` (policy-aware `TopologicalExecutor`), `ReflectionEngine` (wrapped by `Reflector`), `AutonomyLoop`, `PatchAuditor`, `SelfModificationEngine`, and `HotReloader`. Default tools are registered during initialization.
 - **Agent Core**: Adaptive planner emits validated `TaskGraph` DAGs with semantic metadata, Worker executes dependency-aware batches under policy enforcement, AutonomyLoop runs multi-cycle reflective loops with replanning, Reflector stores structured reflections, SimulationSandbox provides in-memory predictions, and data classes in `agent_core.base` capture DAG-oriented traces.
+- **Multi-Agent Coordination Layer**: `agents.multi_agent_engine.MultiAgentEngine` orchestrates planner, critic, simulation, optimization, research, and tool-evolution agents. It detects capability gaps, requests new tool proposals, benchmarks candidates inside the `SimulationSandbox`, and applies autonomy rules via `ToolAutonomyPolicy` and `PolicyEngine` before optionally integrating new tools into the registry.
 - **Memory**: `MemoryManager` persists symbolic records (JSON) and semantic vectors, and now feeds a memory intelligence layer (`MemoryRanker`, `MemoryFilter`, `MemoryContextBuilder`) that curates context windows for planning and reflection.
 - **Policy**: `PolicyEngine` applies safety, permission, determinism, and execution-shaping rules across planning, execution, and reflection, logging policy events for auditability.
 - **Tools**: `ToolRegistry` validates self-describing tools (name, version, schema, permissions, determinism) and dispatches them through the sandbox; policy enforcement blocks missing metadata or unsafe arguments.
@@ -15,6 +16,7 @@ graph TD
     Controller --> WorldModel
     Controller --> Dialog[DialogManager]
     Controller --> Autonomy[AutonomyLoop]
+    Controller --> MultiAgent[MultiAgentEngine]
     Autonomy --> Planner[AdaptivePlanner]
     Planner --> Plan[TaskGraph]
     Planner --> MemoryIntelligence
@@ -22,6 +24,13 @@ graph TD
     Dialog --> WorldModel
     MemoryIntelligence[Memory Context Builder] --> Planner
     Autonomy --> Worker
+    MultiAgent --> Planner
+    MultiAgent --> Critic[Critic Agent]
+    MultiAgent --> Simulation[Simulation Agent]
+    MultiAgent --> Optimization[Optimization Agent]
+    MultiAgent --> Research[Research Agent]
+    MultiAgent --> ToolEvolution[ToolEvolutionAgent]
+    ToolEvolution --> ToolRegistry
     Worker --> Executor[TopologicalExecutor]
     Worker --> SimulationSandbox
     Executor --> Sandbox
@@ -59,6 +68,15 @@ graph TD
 - **Sandbox (`agent_core/sandbox.py`)**: Executes callables with restricted `SAFE_BUILTINS` and wraps errors as `SandboxError`.
 - **Simulation Sandbox (`simulation/sandbox.py`)**: Provides a virtual filesystem overlay, predicts tool effects, estimates benchmark characteristics, and returns `SimulationResult` objects. Integrates with AdaptivePlanner (plan scoring and side-effect-aware dependencies), Worker (pre-execution simulation persisted to memory), and ReflectionEngine (expected vs actual comparisons, warnings, optimizations).
 - **Self-Modification guardrails**: `PatchAuditor`, `SelfModificationEngine`, and `HotReloader` vet and apply code patches with banned-token checks and safe reload hooks.
+- **Multi-Agent Layer (`agents/multi_agent_engine.py`)**: `MultiAgentEngine` wires PlannerAgent (first-pass plans + capability metadata), CriticAgent (hole detection, missing tools), SimulationAgent (sandbox previews), OptimizationAgent (parallelization and warning mitigation), ResearchAgent (knowledge fills via world-model alignment), and ToolEvolutionAgent (gap detection, candidate generation, simulation/benchmarking, autonomy enforcement). Decisions and feedback are written to memory namespaces such as `plan_feedback`, `goal_assessments`, and `tool_evolution`.
+
+### Tool Autonomy and Evolution
+- **ToolAutonomyPolicy (`tools/tool_autonomy_policy.py`)**: Configures `autonomy_mode` (`ask`, `review`, `autonomous`) plus gates for benchmark improvement, simulation success, and policy approval. MultiAgentEngine consumes this policy when evaluating new tools.
+- **ToolEvolutionAgent**: Detects missing or unbound tools in task graphs, generates candidate tool specs from world-model gaps, simulates candidates inside `SimulationSandbox`, estimates performance via `BenchmarkFacade`, compares against existing tools when provided, and applies acceptance rules. Acceptance requires simulation success, policy approval (permissions subset), and non-regressing benchmarks when enabled. Modes:
+  - `ask`: records a user request artifact without integrating.
+  - `review`: auto-generates candidates and awaits approval.
+  - `autonomous`: auto-integrates candidates into `ToolRegistry` when metrics are superior.
+- **Coordination Flow**: `MultiAgentEngine.coordinate` runs plan→critic→simulation→optimization, then invokes ToolEvolutionAgent if a gap is found. Candidate specs are simulated and benchmarked before `PolicyEngine` and autonomy rules decide whether to register tools (in-memory only) or request user/reviewer input.
 
 ### Memory Subsystem
 - **MemoryManager (`memory/memory_manager.py`)**: Facade combining `SymbolicMemory` (JSON persistence) and `VectorMemory` (semantic search with deterministic hashing fallback). Provides `store_text`, `store_fact`, `query`, `recall_recent`, `semantic_search`, `add` (compatibility), `latest`, and `export_state`.
@@ -106,6 +124,14 @@ graph TD
 - **Unit tests**: `python -m unittest discover sentinel/tests` exercises adaptive planning, policy enforcement, memory intelligence, reflection adjustments, and policy-blocked execution paths.
 - **Import audit**: `python -m compileall sentinel` validates module imports and syntax.
 - **Runtime wire-up**: `SentinelController.process_input` exercises planner, policy engine, worker, reflector, autonomy, memory, and tool registry end-to-end.
+
+### Tool Autonomy Test Scenarios
+- **Missing tool in TaskGraph**: CriticAgent flags the gap; ToolEvolutionAgent generates a spec and processes it through autonomy rules according to the configured mode.
+- **Simulation failure**: Candidate rejected when `SimulationSandbox` reports warnings or missing required parameters.
+- **Benchmark regression**: Candidates with lower `relative_speed` than baselines are declined when improvement is required.
+- **Ask mode**: Generates a user-facing request artifact and does not integrate.
+- **Review mode**: Auto-generates the candidate and waits for reviewer approval before registry changes.
+- **Autonomous mode**: Registers a candidate into `ToolRegistry` when policy, simulation, and benchmark criteria pass.
 
 ## Change Log
 - Added AdaptivePlanner with memory-grounded, policy-aware DAG planning and deterministic fallback.
