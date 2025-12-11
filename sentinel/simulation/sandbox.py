@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from sentinel.logging.logger import get_logger
 from sentinel.planning.task_graph import TaskGraph, TaskNode
 from sentinel.tools.registry import ToolRegistry
+from sentinel.research.effect_predictor import ToolEffectPredictorV2
 
 logger = get_logger(__name__)
 
@@ -40,45 +41,14 @@ class VirtualFileSystem:
 
 
 class ToolEffectPredictor:
-    """Predict tool outputs and side-effects without executing them."""
+    """Deprecated shim for V1 predictor (kept for backward compatibility)."""
 
     def predict(self, tool: Any, args: Dict[str, Any], world_model: Any | None) -> Dict[str, Any]:
+        v2 = ToolEffectPredictorV2()
         schema = getattr(tool, "schema", None)
-        warnings: List[str] = []
-        predicted_outputs: Dict[str, Any] = {}
-        predicted_vfs: List[str] = []
-        metadata: Dict[str, Any] = {}
-
         if schema:
-            required = [
-                key
-                for key, meta in schema.input_schema.items()
-                if meta.get("required")
-            ]
-            missing = [field for field in required if field not in args]
-            if missing:
-                warnings.append(f"Missing required parameters: {', '.join(missing)}")
-
-            predicted_outputs = {
-                key: meta if not isinstance(meta, dict) else meta.get("type", meta)
-                for key, meta in schema.output_schema.items()
-            }
-            metadata["deterministic"] = getattr(schema, "deterministic", True)
-            metadata["permissions"] = getattr(schema, "permissions", [])
-
-        for arg_name, value in args.items():
-            if isinstance(value, str) and any(keyword in arg_name for keyword in ["path", "file", "output", "artifact"]):
-                predicted_vfs.append(value)
-
-        if world_model and getattr(world_model, "dependencies", None):
-            metadata["world_dependencies"] = world_model.dependencies
-
-        return {
-            "outputs": predicted_outputs,
-            "vfs_writes": predicted_vfs,
-            "metadata": metadata,
-            "warnings": warnings,
-        }
+            v2.update_model({tool.name: {"outputs": schema.output_schema, "preconditions": []}})
+        return v2.predict(tool.name, args)
 
 
 class BenchmarkFacade:
@@ -112,13 +82,15 @@ class SimulationSandbox:
         self,
         tool_registry: ToolRegistry,
         virtual_fs: Optional[VirtualFileSystem] = None,
-        predictor: Optional[ToolEffectPredictor] = None,
+        predictor: Optional[ToolEffectPredictorV2] = None,
         benchmark: Optional[BenchmarkFacade] = None,
+        semantic_profiles: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> None:
         self.tool_registry = tool_registry
         self.vfs = virtual_fs or VirtualFileSystem()
-        self.predictor = predictor or ToolEffectPredictor()
+        self.predictor = predictor or ToolEffectPredictorV2(semantic_profiles)
         self.benchmark_facade = benchmark or BenchmarkFacade()
+        self.semantic_profiles = semantic_profiles or {}
 
     def simulate_tool_call(self, tool_name: str, args: Dict[str, Any], world_model: Any | None) -> SimulationResult:
         if not self.tool_registry.has_tool(tool_name):
@@ -132,20 +104,33 @@ class SimulationSandbox:
             )
 
         tool = self.tool_registry.get(tool_name)
-        predictions = self.predictor.predict(tool, args, world_model)
+        predictions = self.predictor.predict(tool_name, args)
+        schema = getattr(tool, "schema", None)
+        missing_required: List[str] = []
+        if schema:
+            missing_required = [
+                key for key, meta in schema.input_schema.items() if meta.get("required") and key not in args
+            ]
+            if missing_required:
+                predictions.setdefault("warnings", []).append(
+                    f"Missing required parameters: {', '.join(missing_required)}"
+                )
         vfs_changes: Dict[str, str] = {}
         for path in predictions.get("vfs_writes", []):
             summary = f"Predicted write by {tool_name} using args {sorted(args.keys())}"
             self.vfs.write(path, summary, metadata={"tool": tool_name, "type": "predicted"})
             vfs_changes[path] = summary
+        for side_effect in predictions.get("side_effects", []):
+            vfs_changes.setdefault(f"side_effect://{tool_name}/{side_effect}", side_effect)
 
         benchmark = self.benchmark_facade.estimate_performance(tool, args)
-        success = not predictions.get("warnings")
+        failure_risk = predictions.get("failure_likelihood", 0.0)
+        success = failure_risk < 0.7 and not predictions.get("warnings")
         return SimulationResult(
             success=success,
             predicted_outputs=predictions.get("outputs", {}),
             predicted_vfs_changes=vfs_changes,
-            benchmark=benchmark,
+            benchmark={**benchmark, "failure_likelihood": failure_risk, "runtime": predictions.get("runtime")},
             warnings=predictions.get("warnings", []),
         )
 
@@ -198,6 +183,12 @@ class SimulationSandbox:
             success=True,
             predicted_outputs={produced: args.get(produced, description) for produced in node.produces},
             predicted_vfs_changes={},
-            benchmark={"complexity": "O(1)", "relative_speed": 10, "notes": "No-op node"},
+            benchmark={"complexity": "O(1)", "relative_speed": 10, "notes": "No-op node", "failure_likelihood": 0.0},
             warnings=[],
         )
+
+    def set_semantic_profiles(self, semantic_profiles: Dict[str, Dict[str, Any]]) -> None:
+        """Update predictor with semantic profiles from research pipelines."""
+
+        self.semantic_profiles = semantic_profiles
+        self.predictor.update_model(semantic_profiles)

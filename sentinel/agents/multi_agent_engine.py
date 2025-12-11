@@ -279,7 +279,9 @@ class ToolEvolutionAgent:
         return comparison
 
     def decide_acceptance(self, metrics: Dict[str, Any], autonomy_mode: Literal["ask", "review", "autonomous"]) -> Dict[str, Any]:
-        simulation_ok = not self.autonomy_policy.require_simulation_success or metrics["simulation"]["success"]
+        simulation_ok = not self.autonomy_policy.require_simulation_success or (
+            metrics["simulation"]["success"] and not metrics["simulation"].get("warnings")
+        )
         policy_ok = not self.autonomy_policy.require_policy_approval or metrics.get("policy_allowed", False)
         comparison = metrics.get("comparison", {"better_or_equal": True})
         benchmark_ok = not self.autonomy_policy.require_benchmark_improvement or comparison.get("better_or_equal", False)

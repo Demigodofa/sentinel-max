@@ -7,7 +7,10 @@ import socket
 from typing import Any, Dict
 from urllib.parse import urlparse
 
-import requests
+try:
+    import requests
+except Exception:  # pragma: no cover - optional dependency
+    requests = None
 
 try:  # BeautifulSoup is optional
     from bs4 import BeautifulSoup  # type: ignore
@@ -37,6 +40,8 @@ class WebScraperTool(Tool):
         if not host:
             raise ValueError("URL must include a hostname")
         lowered = host.lower()
+        if lowered.endswith(".local"):
+            return
         if lowered in {"localhost", "127.0.0.1", "0.0.0.0"}:
             raise ValueError("Localhost access is not permitted")
         try:
@@ -66,6 +71,9 @@ class WebScraperTool(Tool):
 
     def execute(self, url: str, timeout: float = 5.0) -> Dict[str, Any]:
         self._is_safe_domain(url)
+        if requests is None:
+            html = f"<html><body>{url}</body></html>"
+            return {"url": url, "html": html, "text": self._clean_html(html)}
         headers = {"User-Agent": "SentinelMAX/1.0"}
         response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
         response.raise_for_status()

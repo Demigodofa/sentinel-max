@@ -185,6 +185,7 @@ class AdaptivePlanner:
             "knowledge_sources": [m.get("namespace", "") for m in plan_context.memories],
             "tool_choices": [node.tool for node in nodes],
             "reasoning_trace": self._reasoning_trace(plan_context, nodes),
+            "semantic_tool_profile": self._semantic_profile(),
         }
         graph = TaskGraph(nodes, metadata=metadata)
         return graph
@@ -220,26 +221,47 @@ class AdaptivePlanner:
             simulation_side_effects=side_effects,
             simulation_warnings=warning_map,
             plan_score=self._score_from_simulation(simulations),
+            predicted_effects={
+                node_id: {
+                    "side_effects": result.predicted_vfs_changes,
+                    "failure_likelihood": result.benchmark.get("failure_likelihood", 0.0),
+                }
+                for node_id, result in simulations.items()
+            },
         )
 
     def _select_tool(self, subgoal: str, goal: str) -> Tuple[Optional[str], Dict[str, Any], Optional[str]]:
         if "analyze" in subgoal and self.tool_registry.has_tool("code_analyzer"):
-            return "code_analyzer", {"code": goal}, "code_assessment"
+            return self._prefer_tool("code_analyzer", {"code": goal}, "code_assessment")
         if "generate_service" in subgoal and self.tool_registry.has_tool("microservice_builder"):
-            return "microservice_builder", {"description": goal, "auto_start": False}, "service_spec"
+            return self._prefer_tool("microservice_builder", {"description": goal, "auto_start": False}, "service_spec")
         if "collect_information" in subgoal and self.tool_registry.has_tool("web_search"):
-            return "web_search", {"query": goal}, "search_results"
+            return self._prefer_tool("web_search", {"query": goal}, "search_results")
         if "process_files" in subgoal and self.tool_registry.has_tool("internet_extract"):
-            return "internet_extract", {"url": goal.split(" ")[-1]}, "extracted_content"
+            return self._prefer_tool("internet_extract", {"url": goal.split(" ")[-1]}, "extracted_content")
         if self.tool_registry.has_tool("internet_extract") and "synthesize" in subgoal:
-            return "internet_extract", {"url": goal}, "synthesis"
+            return self._prefer_tool("internet_extract", {"url": goal}, "synthesis")
         return None, {"message": goal}, None
+
+    def _prefer_tool(
+        self, tool_name: str, args: Dict[str, Any], output: Optional[str]
+    ) -> Tuple[Optional[str], Dict[str, Any], Optional[str]]:
+        profile = self._semantic_profile().get(tool_name, {})
+        failure = profile.get("failure_likelihood", 0.0)
+        if failure and failure > 0.8:
+            return None, args, output
+        return tool_name, args, output
 
     def _parallelizable_for(self, tool_name: Optional[str]) -> bool:
         if tool_name is None:
             return True
         schema = self.tool_registry.get_schema(tool_name)
         return bool(schema and schema.deterministic)
+
+    def _semantic_profile(self) -> Dict[str, Any]:
+        if not self.simulation_sandbox or not hasattr(self.simulation_sandbox, "predictor"):
+            return {}
+        return getattr(self.simulation_sandbox.predictor, "semantic_profiles", {})
 
     def _reasoning_trace(self, plan_context: PlanContext, nodes: List[TaskNode]) -> str:
         tool_descriptions = [f"{node.id}:{node.tool or 'no-tool'}" for node in nodes]

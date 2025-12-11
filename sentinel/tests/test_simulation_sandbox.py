@@ -8,6 +8,7 @@ from sentinel.simulation.sandbox import (
     ToolEffectPredictor,
     VirtualFileSystem,
 )
+from sentinel.research.effect_predictor import ToolEffectPredictorV2
 from sentinel.tools.registry import ToolRegistry
 from sentinel.tools.tool_schema import ToolSchema
 
@@ -104,6 +105,25 @@ class TestSimulationSandbox(unittest.TestCase):
         predictions = predictor.predict(tool, {"path": "opt.txt"}, world_model=None)
         self.assertLess(estimate["relative_speed"], 10)
         self.assertIn("opt.txt", predictions["vfs_writes"])
+
+    def test_predictor_v2_semantic_profiles(self):
+        semantic_profiles = {
+            "file_writer": {
+                "outputs": {"artifact": "file"},
+                "vfs_writes": ["/tmp/a.txt", "/tmp/b.txt"],
+                "failure_likelihood": 0.4,
+                "side_effects": ["log"],
+            }
+        }
+        sandbox = SimulationSandbox(
+            self.registry, predictor=ToolEffectPredictorV2(semantic_profiles), semantic_profiles=semantic_profiles
+        )
+        result = sandbox.simulate_tool_call(
+            "file_writer", {"path": "/tmp/c.txt", "payload": "data"}, world_model=None
+        )
+        self.assertTrue(result.success)
+        self.assertGreaterEqual(len(result.predicted_vfs_changes), 1)
+        self.assertIn("side_effect://file_writer/log", result.predicted_vfs_changes)
 
 
 if __name__ == "__main__":
