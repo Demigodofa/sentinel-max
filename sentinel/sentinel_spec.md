@@ -2,7 +2,7 @@
 
 ## Architecture Overview
 - **Entry points**: `main.py` exposes CLI (`run_cli`), GUI (`run_gui`), and FastAPI server (`run_server`). Each mode constructs a `SentinelController` to orchestrate core subsystems.
-- **Controller**: `SentinelController` wires `MemoryManager`, `MemoryContextBuilder`, `PolicyEngine`, DAG `AdaptivePlanner`, `Worker` (policy-aware `TopologicalExecutor`), `ReflectionEngine` (wrapped by `Reflector`), `AutonomyLoop`, `PatchAuditor`, `SelfModificationEngine`, and `HotReloader`. Default tools are registered during initialization.
+- **Controller**: `SentinelController` wires `MemoryManager`, `MemoryContextBuilder`, `WorldModel`, `DialogManager`, `PolicyEngine`, DAG `AdaptivePlanner`, `Worker` (policy-aware `TopologicalExecutor`), `ReflectionEngine` (wrapped by `Reflector`), `AutonomyLoop`, `PatchAuditor`, `SelfModificationEngine`, and `HotReloader`. Default tools are registered during initialization.
 - **Agent Core**: Adaptive planner emits validated `TaskGraph` DAGs with semantic metadata, Worker executes dependency-aware batches under policy enforcement, AutonomyLoop runs multi-cycle reflective loops with replanning, Reflector stores structured reflections, and data classes in `agent_core.base` capture DAG-oriented traces.
 - **Memory**: `MemoryManager` persists symbolic records (JSON) and semantic vectors, and now feeds a memory intelligence layer (`MemoryRanker`, `MemoryFilter`, `MemoryContextBuilder`) that curates context windows for planning and reflection.
 - **Policy**: `PolicyEngine` applies safety, permission, determinism, and execution-shaping rules across planning, execution, and reflection, logging policy events for auditability.
@@ -12,10 +12,14 @@
 graph TD
     UserInput[User Input] --> Controller[SentinelController]
     Controller --> Policy[PolicyEngine]
+    Controller --> WorldModel
+    Controller --> Dialog[DialogManager]
     Controller --> Autonomy[AutonomyLoop]
     Autonomy --> Planner[AdaptivePlanner]
     Planner --> Plan[TaskGraph]
     Planner --> MemoryIntelligence
+    Planner --> WorldModel
+    Dialog --> WorldModel
     MemoryIntelligence[Memory Context Builder] --> Planner
     Autonomy --> Worker
     Worker --> Executor[TopologicalExecutor]
@@ -43,7 +47,7 @@ graph TD
 
 ### Agent Core
 - **Data Model (`agent_core/base.py`)**: DAG-focused `ExecutionResult` objects reference `TaskNode` instances; `ExecutionTrace` tracks ordered results plus parallel batches.
-- **Planner (`planning/adaptive_planner.py`)**: Performs goal analysis, memory-grounded reasoning via `MemoryContextBuilder`, tool capability matching, subgoal generation, and DAG construction with sanity checkpoints. Plans carry metadata (`origin_goal`, `knowledge_sources`, `tool_choices`, `reasoning_trace`) and fall back to deterministic templates on failure. Plans and reasoning traces are persisted to `plans` and `planning_traces` namespaces.
+- **Planner (`planning/adaptive_planner.py`)**: Performs goal analysis, memory-grounded reasoning via `MemoryContextBuilder`, world-model-guided domain and resource classification, tool capability matching, subgoal generation, and DAG construction with sanity checkpoints. Plans carry metadata (`origin_goal`, `domain`, `domain_capabilities`, `resources`, `knowledge_sources`, `tool_choices`, `reasoning_trace`) and fall back to deterministic templates on failure. Plans and reasoning traces are persisted to `plans` and `planning_traces` namespaces.
 - **Worker (`agent_core/worker.py`)**: Delegates to `TopologicalExecutor` to honor dependencies, group parallelizable tasks, enforce policy checks before tool calls, and persist outputs/errors to memory (`execution` namespace).
 - **AutonomyLoop (`agent_core/autonomy.py`)**: Runs multi-cycle planner→worker→reflection loops with cycle/time/failure limits, repeat-plan detection, policy-aware replanning, goal updates on failure, and typed reflections (`reflection.*`).
 - **Reflector (`agent_core/reflection.py`) + ReflectionEngine (`reflection/reflection_engine.py`)**: Produces structured reflections (operational, strategic, self-model, user-preference, plan-critique) with summaries, detected issues, suggested improvements, plan adjustments, and confidence scores. Context is grounded via `MemoryContextBuilder` and persisted under typed namespaces.
@@ -56,6 +60,12 @@ graph TD
 - **SymbolicMemory / VectorMemory**: Namespaced fact store with locking, atomic writes, and timestamp metadata; vector store with embedding fallback and cosine search.
 - Memory writes across components populate additional namespaces: `planning_traces`, `policy_events`, `memory_contexts`, `memory_rank_reports`, `reflection.*`, and `execution`.
 
+### World Model (`world/model.py`)
+- Maintains domain registry for coding, multi-service, pipelines, devops, web tasks, research, optimization, and automation; domains capture capabilities and typical goals and can be extended at runtime.
+- Models resources (file resources, code artifacts, services, pipelines, browser contexts, data sources) with adjacency-list dependency graphs that express `requires`/`produces` relationships.
+- Provides queries for domain detection (`get_domain`), capability listing, required resource prediction, and dependency forecasting driven by goal text.
+- Persists world knowledge to symbolic memory (cached at startup, incrementally updated) so planning and dialog context share consistent state.
+
 ### Policy Layer (`policy/policy_engine.py`)
 - Applies safety and preference policies: enforces tool metadata presence, permission allowlist, determinism-first preference (disabling parallelism for non-deterministic tools), parallel execution limits, artifact collision checks, unsafe argument detection, and cycle/unresolved-input rejection via validator integration.
 - Integrates with planner (plan shaping), worker (execution blocking), and reflection (policy advice). Logs policy blocks/relaxations/recommendations to `policy_events`.
@@ -67,15 +77,17 @@ graph TD
 
 ### Interfaces
 - **CLI/GUI/Server**: Continue to delegate user inputs to `SentinelController.process_input`, benefiting from adaptive planning, policy enforcement, and reflection-driven replanning.
+- **DialogManager**: Enriches conversations with world-model-driven domain context, predicted resources, and dependency hints while persisting dialog turns to symbolic memory.
 
 ## Data Flow and Invariants
 1. User input -> Controller -> AutonomyLoop records goal to memory.
-2. AdaptivePlanner builds validated `TaskGraph` DAGs using memory contexts, tool metadata, and policy guidance; graphs stored in `plans` with semantic metadata and reasoning traces in `planning_traces`.
-3. PolicyEngine evaluates plans (permissions, determinism, parallelism, artifact collisions) before execution.
-4. Worker executes dependency-ordered batches via `TopologicalExecutor` through the sandboxed tool registry; policy checks guard each node; results and errors written to `execution` namespace with batch ordering.
-5. Autonomy loop enforces cycle/time/failure bounds, detects repeat plans, updates goals on failure, and injects typed reflections when progress stalls; reflections may trigger replanning.
-6. ReflectionEngine summarizes `ExecutionTrace`, detects issues, proposes plan adjustments, and stores structured reflections plus legacy summaries under typed namespaces.
-7. MemoryManager + MemoryIntelligence maintain synchronized symbolic/vector stores and curated contexts; `export_state` exposes both stores and tool metadata for inspection.
+2. WorldModel classifies the goal into a domain, surfaces capabilities, predicts required resources, and stores dependencies in symbolic memory for downstream components.
+3. AdaptivePlanner builds validated `TaskGraph` DAGs using memory contexts, world-model hints, tool metadata, and policy guidance; graphs stored in `plans` with semantic metadata and reasoning traces in `planning_traces`.
+4. PolicyEngine evaluates plans (permissions, determinism, parallelism, artifact collisions) before execution.
+5. Worker executes dependency-ordered batches via `TopologicalExecutor` through the sandboxed tool registry; policy checks guard each node; results and errors written to `execution` namespace with batch ordering.
+6. Autonomy loop enforces cycle/time/failure bounds, detects repeat plans, updates goals on failure, and injects typed reflections when progress stalls; reflections may trigger replanning.
+7. ReflectionEngine summarizes `ExecutionTrace`, detects issues, proposes plan adjustments, and stores structured reflections plus legacy summaries under typed namespaces.
+8. MemoryManager + MemoryIntelligence maintain synchronized symbolic/vector stores and curated contexts; `export_state` exposes both stores and tool metadata for inspection.
 
 **Invariants and Safety Guarantees**
 - Tool names are unique; registration rejects duplicates and non-Tool instances. Tool metadata must exist for execution.
@@ -95,3 +107,4 @@ graph TD
 - Added Memory Intelligence layer (ranking/filtering/context building) plus new namespaces for rank reports and contexts.
 - Upgraded Reflection to v3 with structured, multi-dimensional outputs and replanning hooks.
 - Worker, AutonomyLoop, Controller updated for policy enforcement and replanning.
+- Added WorldModel foundation layer with domain registry, resource/dependency graphs, dialog integration, and planner metadata enrichment.
