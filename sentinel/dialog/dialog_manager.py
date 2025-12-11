@@ -73,3 +73,34 @@ class DialogManager:
         title = milestone_data.get("title")
         desc = milestone_data.get("description")
         return f"🏁 MILESTONE REACHED: {title}\n{desc}"
+
+    # ------------------------------------------------------------
+    # COMPOSITE STATUS
+    # ------------------------------------------------------------
+
+    def show_full_report(self, project: Dict[str, Any], progress: Dict[str, Any], issues: Dict[str, Any]) -> str:
+        sections = [self.show_project_overview(project), self.show_project_progress(progress)]
+        dependency_section = self.show_dependency_issues(issues)
+        if dependency_section:
+            sections.append(dependency_section)
+        return "\n\n".join(sections)
+
+    # ------------------------------------------------------------
+    # HEALTH SUMMARY
+    # ------------------------------------------------------------
+
+    def show_health(self, health: Dict[str, Any]) -> str:
+        lines = ["🩺 SYSTEM HEALTH"]
+        storage = health.get("storage", {})
+        lines.append(f"  📂 Storage path: {storage.get('storage_path')}")
+        lines.append(f"  ✅ Readable: {storage.get('readable')}")
+        lines.append(f"  ✅ Writable: {storage.get('writable')}")
+        lines.append(f"  📁 Projects: {storage.get('projects')}")
+        policy = health.get("policy", {})
+        if policy:
+            lines.append("  🔒 Policy limits:")
+            lines.append(f"    - Max goals: {policy.get('max_goals')}")
+            lines.append(f"    - Max depth: {policy.get('max_dependency_depth')}")
+            lines.append(f"    - Max days: {policy.get('max_project_duration_days')}")
+            lines.append(f"    - Max refinement rounds: {policy.get('max_refinement_rounds')}")
+        return "\n".join(lines)
