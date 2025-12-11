@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import List
 
 from sentinel.agent_core.base import Tool
+from sentinel.tools.tool_schema import ToolSchema
 
 _PRESEEDED_RESULTS = {
     "sentinel": [
@@ -19,7 +20,16 @@ _PRESEEDED_RESULTS = {
 
 class WebSearchTool(Tool):
     def __init__(self) -> None:
-        super().__init__("web_search", "Deterministic local search index")
+        super().__init__("web_search", "Deterministic local search index", deterministic=True)
+        self.schema = ToolSchema(
+            name="web_search",
+            version="1.0.0",
+            description="Deterministic local search index",
+            input_schema={"query": {"type": "string", "required": True}},
+            output_schema={"type": "array", "items": "string"},
+            permissions=["net:read"],
+            deterministic=True,
+        )
 
     def execute(self, query: str) -> List[str]:
         key = query.lower().strip()

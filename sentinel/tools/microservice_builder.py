@@ -19,6 +19,7 @@ except Exception:  # pragma: no cover
 from sentinel.agent_core.base import Tool
 from sentinel.agent_core.patch_auditor import PatchAuditor, PatchProposal
 from sentinel.logging.logger import get_logger
+from sentinel.tools.tool_schema import ToolSchema
 
 logger = get_logger(__name__)
 
@@ -53,11 +54,24 @@ def _ensure_fastapi() -> Any:
 
 class MicroserviceBuilder(Tool):
     def __init__(self, auditor: PatchAuditor | None = None) -> None:
-        super().__init__("microservice_builder", "Generate sandboxed FastAPI microservices")
+        super().__init__(
+            "microservice_builder",
+            "Generate sandboxed FastAPI microservices",
+            deterministic=False,
+        )
         self.auditor = auditor or PatchAuditor()
         self._app = None
         self._server_thread: threading.Thread | None = None
         self._uvicorn_server = None
+        self.schema = ToolSchema(
+            name="microservice_builder",
+            version="1.0.0",
+            description="Generate sandboxed FastAPI microservices",
+            input_schema={"description": {"type": "string", "required": True}, "port": {"type": "number", "required": False}, "auto_start": {"type": "boolean", "required": False}},
+            output_schema={"type": "object", "properties": {"code": "string", "endpoints": "array", "status": "string"}},
+            permissions=["fs:read-limited", "net:listen"],
+            deterministic=False,
+        )
 
     def _render_code(self, endpoints: List[Dict[str, Any]]) -> str:
         routes_code = []

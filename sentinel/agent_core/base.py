@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sentinel.planning.task_graph import TaskNode
 
 
 @dataclass
@@ -32,9 +35,12 @@ class Tool:
     name: str
     description: str
 
-    def __init__(self, name: str, description: str = "") -> None:
+    deterministic: bool
+
+    def __init__(self, name: str, description: str = "", deterministic: bool = True) -> None:
         self.name = name
         self.description = description or name
+        self.deterministic = deterministic
 
     def __call__(self, **kwargs: Any) -> Any:  # pragma: no cover - thin wrapper
         return self.execute(**kwargs)
@@ -47,24 +53,45 @@ class Tool:
 
 @dataclass
 class ExecutionResult:
-    step: PlanStep
+    """Execution result for a single task node."""
+
+    node: "TaskNode"
     success: bool
     output: Any = None
     error: Optional[str] = None
+    attempted_recovery: bool = False
 
 
 @dataclass
 class ExecutionTrace:
+    """Ordered results from a task graph execution."""
+
     results: List[ExecutionResult] = field(default_factory=list)
+    batches: List[List[str]] = field(default_factory=list)
 
     def add(self, result: ExecutionResult) -> None:
         self.results.append(result)
 
+    def add_batch(self, batch: List[str]) -> None:
+        self.batches.append(batch)
+
+    @property
+    def failed_nodes(self) -> List[ExecutionResult]:
+        return [res for res in self.results if not res.success]
+
     def summary(self) -> str:
         parts = []
-        for res in self.results:
+        for idx, res in enumerate(self.results, start=1):
             if res.success:
-                parts.append(f"Step {res.step.step_id}: {res.output}")
+                parts.append(f"Task {res.node.id} ok: {res.output}")
             else:
-                parts.append(f"Step {res.step.step_id} failed: {res.error}")
-        return " | ".join(parts)
+                recovery_note = " (after recovery)" if res.attempted_recovery else ""
+                parts.append(
+                    f"Task {res.node.id} failed{recovery_note}: {res.error}"
+                )
+        batches_repr = (
+            f" | batches={','.join('[' + ','.join(batch) + ']' for batch in self.batches)}"
+            if self.batches
+            else ""
+        )
+        return " | ".join(parts) + batches_repr

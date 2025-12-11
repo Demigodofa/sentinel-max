@@ -6,6 +6,7 @@ from tkinter import ttk
 from typing import Iterable
 
 from sentinel.agent_core.base import PlanStep
+from sentinel.planning.task_graph import TaskNode
 from sentinel.gui.theme import load_theme
 
 
@@ -70,8 +71,8 @@ class PlanPanel(ttk.Frame):
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
 
-    def update_plan(self, steps: Iterable[PlanStep] | None) -> None:
-        """Render plan steps in the panel."""
+    def update_plan(self, steps: Iterable[PlanStep | TaskNode] | None) -> None:
+        """Render plan steps or task nodes in the panel."""
 
         for child in self.inner.winfo_children():
             child.destroy()
@@ -87,20 +88,24 @@ class PlanPanel(ttk.Frame):
 
         for step in steps:
             frame = ttk.Frame(self.inner, style="PlanStep.TFrame")
+            step_id = getattr(step, "step_id", None) or getattr(step, "id", "?")
             title = ttk.Label(
                 frame,
-                text=f"Step {step.step_id}: {step.description}",
+                text=f"Step {step_id}: {step.description}",
                 style="PlanStepTitle.TLabel",
             )
             title.pack(anchor="w")
 
             details = []
-            if step.tool_name:
-                details.append(f"Tool: {step.tool_name}")
-            if step.expected_output:
-                details.append(f"Expected: {step.expected_output}")
-            if step.params:
-                details.append(f"Params: {step.params}")
+            tool_name = getattr(step, "tool_name", None) or getattr(step, "tool", None)
+            params = getattr(step, "params", None) or getattr(step, "args", None)
+            expected_output = getattr(step, "expected_output", None)
+            if tool_name:
+                details.append(f"Tool: {tool_name}")
+            if expected_output:
+                details.append(f"Expected: {expected_output}")
+            if params:
+                details.append(f"Params: {params}")
             if details:
                 body = ttk.Label(
                     frame,

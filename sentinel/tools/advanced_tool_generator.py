@@ -9,6 +9,7 @@ from sentinel.agent_core.base import Tool
 from sentinel.agent_core.patch_auditor import PatchAuditor, PatchProposal
 from sentinel.tools.registry import DEFAULT_TOOL_REGISTRY, ToolRegistry
 from sentinel.tools.tool_generator import SAFE_BUILTINS, _audit_ast
+from sentinel.tools.tool_schema import ToolSchema
 
 
 @dataclass
@@ -61,9 +62,18 @@ class GeneratedMultiTool(Tool):
     def __init__(
         self, name: str, description: str, logic: str, registry: ToolRegistry | None = None
     ) -> None:
-        super().__init__(name, description)
+        super().__init__(name, description, deterministic=True)
         self._callable = _build_logic_callable(logic)
         self._source = logic
+        self.schema = ToolSchema(
+            name=name,
+            version="1.0.0",
+            description=description,
+            input_schema={"*": {"type": "object", "required": False}},
+            output_schema={"type": "any"},
+            permissions=["compute"],
+            deterministic=True,
+        )
         if registry is not None:
             registry.register(self)
 

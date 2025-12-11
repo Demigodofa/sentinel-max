@@ -5,6 +5,7 @@ import ast
 from typing import Any, Dict, List
 
 from sentinel.agent_core.base import Tool
+from sentinel.tools.tool_schema import ToolSchema
 
 
 _RISKY_CALLS = {"exec", "eval", "open", "__import__"}
@@ -39,7 +40,16 @@ def _complexity(tree: ast.AST) -> int:
 
 class CodeAnalyzerTool(Tool):
     def __init__(self) -> None:
-        super().__init__("code_analyzer", "Analyze Python code for safety and complexity")
+        super().__init__("code_analyzer", "Analyze Python code for safety and complexity", deterministic=True)
+        self.schema = ToolSchema(
+            name="code_analyzer",
+            version="1.0.0",
+            description="Analyze Python code for safety and complexity",
+            input_schema={"code": {"type": "string", "required": True}, "filename": {"type": "string", "required": False}},
+            output_schema={"type": "object", "properties": {"score": "number", "risks": "array", "suggestions": "array"}},
+            permissions=["compute"],
+            deterministic=True,
+        )
 
     def execute(self, code: str, filename: str | None = None) -> Dict[str, Any]:
         tree = ast.parse(code, filename or "<analyzed>")

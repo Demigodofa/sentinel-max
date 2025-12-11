@@ -31,7 +31,14 @@ class SentinelController:
         self.planner = Planner(self.tool_registry, memory=self.memory)
         self.worker = Worker(self.tool_registry, self.sandbox, memory=self.memory)
         self.reflector = Reflector(self.memory)
-        self.autonomy = AutonomyLoop(self.planner, self.worker, self.reflector, self.memory)
+        self.autonomy = AutonomyLoop(
+            self.planner,
+            self.worker,
+            self.reflector,
+            self.memory,
+            cycle_limit=3,
+            timeout=5.0,
+        )
 
         self.patch_auditor = PatchAuditor()
         self.self_mod = SelfModificationEngine(self.patch_auditor)
@@ -46,7 +53,7 @@ class SentinelController:
 
     def process_input(self, message: str) -> str:
         logger.info("Processing user input: %s", message)
-        trace = self.autonomy.run(message, max_time=2.0)
+        trace = self.autonomy.run(message, timeout=2.0)
         latest_reflection = self.memory.latest("reflection")
         if latest_reflection:
             return latest_reflection.content
