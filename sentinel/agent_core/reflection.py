@@ -21,6 +21,6 @@ class Reflector:
 
     def reflect(self, trace: ExecutionTrace) -> str:
         summary = summarize_trace(trace)
-        self.memory.add("reflection", summary)
+        self.memory.store_text(summary, namespace="reflection", metadata={"summary": True})
         logger.info("Reflection recorded")
         return summary

@@ -1,9 +1,12 @@
 """Task planner for Sentinel MAX."""
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
+from uuid import uuid4
+from datetime import datetime
 
 from sentinel.agent_core.base import Plan, PlanStep
+from sentinel.memory.memory_manager import MemoryManager
 from sentinel.tools.registry import ToolRegistry
 from sentinel.logging.logger import get_logger
 
@@ -13,8 +16,9 @@ logger = get_logger(__name__)
 class Planner:
     """Deterministic planner that converts goals into plan steps."""
 
-    def __init__(self, tool_registry: ToolRegistry) -> None:
+    def __init__(self, tool_registry: ToolRegistry, memory: Optional[MemoryManager] = None) -> None:
         self.tool_registry = tool_registry
+        self.memory = memory
 
     def plan(self, goal: str) -> Plan:
         """Generate a deterministic plan for the provided goal."""
@@ -43,4 +47,18 @@ class Planner:
             )
 
         logger.info("Generated plan with %d step(s) for goal: %s", len(steps), goal)
-        return Plan(steps=steps)
+        plan = Plan(steps=steps)
+        if self.memory:
+            try:
+                self.memory.store_fact(
+                    "plans",
+                    key=str(uuid4()),
+                    value={
+                        "goal": goal,
+                        "steps": [step.__dict__ for step in steps],
+                        "created_at": datetime.utcnow().isoformat(),
+                    },
+                )
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.warning("Failed to record plan in memory: %s", exc)
+        return plan

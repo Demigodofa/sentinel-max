@@ -8,7 +8,7 @@ from sentinel.agent_core.sandbox import Sandbox
 from sentinel.agent_core.reflection import Reflector
 from sentinel.agent_core.self_mod import SelfModificationEngine
 from sentinel.agent_core.patch_auditor import PatchAuditor
-from sentinel.agent_core.hot_reload import HotReloader
+from sentinel.agent_core.hot_reloader import HotReloader
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.tools.registry import DEFAULT_TOOL_REGISTRY
 from sentinel.tools import web_search, internet_extractor
@@ -25,8 +25,8 @@ class SentinelController:
         self.sandbox = Sandbox()
         self._register_default_tools()
 
-        self.planner = Planner(self.tool_registry)
-        self.worker = Worker(self.tool_registry, self.sandbox)
+        self.planner = Planner(self.tool_registry, memory=self.memory)
+        self.worker = Worker(self.tool_registry, self.sandbox, memory=self.memory)
         self.reflector = Reflector(self.memory)
         self.autonomy = AutonomyLoop(self.planner, self.worker, self.reflector, self.memory)
 
@@ -43,7 +43,9 @@ class SentinelController:
         logger.info("Processing user input: %s", message)
         trace = self.autonomy.run(message, max_time=2.0)
         latest_reflection = self.memory.latest("reflection")
-        return latest_reflection.content if latest_reflection else trace.summary()
+        if latest_reflection:
+            return latest_reflection.content
+        return trace.summary()
 
     def export_state(self):
         return {
