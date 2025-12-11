@@ -24,6 +24,7 @@ from sentinel.tools.registry import DEFAULT_TOOL_REGISTRY
 from sentinel.tools.tool_generator import generate_echo_tool
 from sentinel.tools.web_search import WEB_SEARCH_TOOL
 from sentinel.simulation.sandbox import SimulationSandbox
+from sentinel.research.research_engine import AutonomousResearchEngine
 from sentinel.world.model import WorldModel
 
 logger = get_logger(__name__)
@@ -39,6 +40,13 @@ class SentinelController:
         self.memory_context_builder = MemoryContextBuilder(self.memory)
         self.policy_engine = PolicyEngine(self.memory)
         self._register_default_tools()
+
+        self.research_engine = AutonomousResearchEngine(
+            self.tool_registry,
+            self.memory,
+            self.policy_engine,
+            simulation_sandbox=self.simulation_sandbox,
+        )
 
         self.dialog_manager = DialogManager(self.memory, self.world_model)
         self.approval_gate = ApprovalGate(self.dialog_manager)

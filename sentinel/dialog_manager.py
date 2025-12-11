@@ -53,3 +53,13 @@ class DialogManager:
         }
         self.memory.store_fact("execution_notifications", key=None, value=message, metadata={"source": "dialog_manager"})
         return message
+
+    def show_research_summary(self, summary: dict):
+        payload = {"type": "research_summary", "summary": summary}
+        self.memory.store_fact("research.domain", key=None, value=payload, metadata={"source": "dialog_manager"})
+        return payload
+
+    def show_tool_semantics(self, semantics: dict):
+        payload = {"type": "tool_semantics", "semantics": semantics}
+        self.memory.store_fact("research.tools", key=None, value=payload, metadata={"source": "dialog_manager"})
+        return payload

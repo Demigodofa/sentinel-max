@@ -8,6 +8,7 @@
 - **Memory**: `MemoryManager` persists symbolic records (JSON) and semantic vectors, and now feeds a memory intelligence layer (`MemoryRanker`, `MemoryFilter`, `MemoryContextBuilder`) that curates context windows for planning and reflection.
 - **Policy**: `PolicyEngine` applies safety, permission, determinism, and execution-shaping rules across planning, execution, and reflection, logging policy events for auditability.
 - **Tools**: `ToolRegistry` validates self-describing tools (name, version, schema, permissions, determinism) and dispatches them through the sandbox; policy enforcement blocks missing metadata or unsafe arguments.
+- **Autonomous Research Engine**: Dedicated pipeline that orchestrates deterministic web search, web extraction, ranking, domain knowledge extraction, tool semantics discovery, predictive effect modeling (ToolEffectPredictorV2), and semantic storage. Outputs feed the SimulationSandbox, AdaptivePlanner, and DialogManager for transparent summaries and richer planning metadata.
 
 ```mermaid
 graph TD
@@ -50,6 +51,9 @@ graph TD
     RealTrace --> ReflectionEngine
     SimulationSandbox --> ReflectionEngine
     ReflectionEngine --> Memory[MemoryManager]
+    Research[Autonomous Research Engine] --> SimulationSandbox
+    Research --> Memory
+    Research --> Planner
     Planner --> Memory
     Worker --> Memory
     Autonomy --> Memory
@@ -72,8 +76,10 @@ graph TD
 - **Reflector (`agent_core/reflection.py`) + ReflectionEngine (`reflection/reflection_engine.py`)**: Produces structured reflections (operational, strategic, self-model, user-preference, plan-critique) with summaries, detected issues, suggested improvements, plan adjustments, and confidence scores. Context is grounded via `MemoryContextBuilder` and persisted under typed namespaces.
 - **Sandbox (`agent_core/sandbox.py`)**: Executes callables with restricted `SAFE_BUILTINS` and wraps errors as `SandboxError`.
 - **Simulation Sandbox (`simulation/sandbox.py`)**: Provides a virtual filesystem overlay, predicts tool effects, estimates benchmark characteristics, and returns `SimulationResult` objects. Integrates with AdaptivePlanner (plan scoring and side-effect-aware dependencies), Worker (pre-execution simulation persisted to memory), and ReflectionEngine (expected vs actual comparisons, warnings, optimizations).
+- **Simulation Sandbox (`simulation/sandbox.py`)**: Provides a virtual filesystem overlay, predicts tool effects (multi-file writes, side-effects, runtime/failure likelihood), and returns `SimulationResult` objects. Integrates with AdaptivePlanner (plan scoring, predicted effects metadata, side-effect-aware dependencies), Worker (pre-execution simulation persisted to memory and anomaly detection), and ReflectionEngine (expected vs actual comparisons, warnings, optimizations). Defaults to ToolEffectPredictorV2 consuming research-derived semantic profiles.
 - **Self-Modification guardrails**: `PatchAuditor`, `SelfModificationEngine`, and `HotReloader` vet and apply code patches with banned-token checks and safe reload hooks.
 - **Multi-Agent Layer (`agents/multi_agent_engine.py`)**: `MultiAgentEngine` wires PlannerAgent (first-pass plans + capability metadata), CriticAgent (hole detection, missing tools), SimulationAgent (sandbox previews), OptimizationAgent (parallelization and warning mitigation), ResearchAgent (knowledge fills via world-model alignment), and ToolEvolutionAgent (gap detection, candidate generation, simulation/benchmarking, autonomy enforcement). Decisions and feedback are written to memory namespaces such as `plan_feedback`, `goal_assessments`, and `tool_evolution`.
+- **Autonomous Research Engine (`research/research_engine.py`)**: Coordinates deterministic web search + internet extraction, SourceRanker scoring (relevance, integrity, authority, novelty, density), domain knowledge extraction, tool semantics discovery, semantic model construction, and ToolEffectPredictorV2 training. Stores artifacts under `research.raw`, `research.ranked`, `research.domain`, `research.tools`, `research.models`, `research.predictor_updates`, and `research.anomalies`, feeds SimulationSandbox semantic profiles, enriches AdaptivePlanner metadata, and exposes summaries via DialogManager helper methods.
 
 ### Execution Subsystem
 - **ExecutionController (`execution/execution_controller.py`)**: Executes `TaskGraph` nodes in topological order under multiple `ExecutionMode` values (`until_complete`, `for_time`, `until_node`, `for_cycles`, `until_condition`, `with_checkins`). Validates simulations, enforces `PolicyEngine` runtime limits, requests approval via `ApprovalGate`, dispatches real runs to `Worker.execute_node_real`, triggers periodic check-ins through `DialogManager`, and logs results to `MemoryManager` under `execution_real`.
@@ -160,6 +166,7 @@ flowchart LR
 7. Autonomy loop enforces mode-specific bounds, detects repeat plans, updates goals on failure, and injects typed reflections when progress stalls; reflections may trigger replanning.
 8. ReflectionEngine summarizes `ExecutionTrace`, merges simulation warnings/predictions, proposes plan adjustments, and stores structured reflections plus legacy summaries under typed namespaces.
 9. MemoryManager + MemoryIntelligence maintain synchronized symbolic/vector stores and curated contexts; `export_state` exposes both stores and tool metadata for inspection.
+10. Research loop: Internet search → extraction → ranking → semantics → simulation (ToolEffectPredictorV2) → planner metadata enrichment; outputs stored under `research.*` namespaces for reuse and anomaly correction.
 
 **Invariants and Safety Guarantees**
 - Tool names are unique; registration rejects duplicates and non-Tool instances. Tool metadata must exist for execution.

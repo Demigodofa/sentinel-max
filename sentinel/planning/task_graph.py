@@ -314,6 +314,7 @@ class TopologicalExecutor:
     ) -> ExecutionResult:
         try:
             output = self._execute_node(node, args)
+            self._log_anomalies(node, simulation, output)
             return ExecutionResult(
                 node=node, success=True, output=output, simulation=simulation
             )
@@ -321,6 +322,7 @@ class TopologicalExecutor:
             logger.error("Task %s failed: %s", node.id, exc)
             try:
                 retry_output = self._execute_node(node, args)
+                self._log_anomalies(node, simulation, retry_output)
                 return ExecutionResult(
                     node=node,
                     success=True,
@@ -400,4 +402,31 @@ class TopologicalExecutor:
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Failed to persist simulation result: %s", exc)
+
+    def _log_anomalies(self, node: TaskNode, simulation, actual_output: Any) -> None:
+        if not simulation or not self.memory:
+            return
+        predicted = simulation.predicted_outputs if hasattr(simulation, "predicted_outputs") else {}
+        discrepancies: Dict[str, Any] = {}
+        if isinstance(actual_output, dict):
+            for key, predicted_value in predicted.items():
+                if key in actual_output and actual_output[key] != predicted_value:
+                    discrepancies[key] = {
+                        "predicted": predicted_value,
+                        "observed": actual_output[key],
+                    }
+        if discrepancies:
+            try:
+                self.memory.store_fact(
+                    "research.anomalies",
+                    key=node.id,
+                    value={
+                        "task": node.id,
+                        "tool": node.tool,
+                        "differences": discrepancies,
+                        "predicted_side_effects": simulation.predicted_vfs_changes,
+                    },
+                )
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.warning("Failed to record anomaly for %s: %s", node.id, exc)
 

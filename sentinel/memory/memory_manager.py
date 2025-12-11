@@ -102,6 +102,22 @@ class MemoryManager:
     ) -> List[Dict[str, Any]]:
         return self.vector.search(query, top_k=top_k, namespace=namespace)
 
+    def store_research(self, namespace: str, payload: Any, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Persist research artifacts into structured namespaces."""
+
+        allowed = {
+            "research.raw",
+            "research.ranked",
+            "research.domain",
+            "research.tools",
+            "research.models",
+            "research.predictor_updates",
+            "research.anomalies",
+        }
+        if namespace not in allowed:
+            raise ValueError(f"Unsupported research namespace: {namespace}")
+        return self.store_fact(namespace, key=None, value=payload, metadata=metadata)
+
     # ------------------------------------------------------------------
     # Compatibility helpers with legacy APIs
     # ------------------------------------------------------------------

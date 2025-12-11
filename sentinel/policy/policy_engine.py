@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
-from sentinel.planning.task_graph import TaskGraph, TaskNode
 from sentinel.tools.registry import ToolRegistry
+
+if TYPE_CHECKING:  # pragma: no cover - avoid circular imports at runtime
+    from sentinel.planning.task_graph import TaskGraph, TaskNode
 
 logger = get_logger(__name__)
 
@@ -36,6 +38,9 @@ class PolicyEngine:
         max_consecutive_failures: int = 3,
         real_tool_allowlist: Optional[Set[str]] = None,
         approval_required: bool = True,
+        max_research_depth: int = 3,
+        max_documents_per_cycle: int = 15,
+        approved_domains: Optional[Set[str]] = None,
     ) -> None:
         self.memory = memory
         self.allowed_permissions = allowed_permissions or {"read", "analyze", "search", "generate"}
@@ -46,11 +51,14 @@ class PolicyEngine:
         self.max_consecutive_failures = max_consecutive_failures
         self.real_tool_allowlist = real_tool_allowlist
         self.approval_required = approval_required
+        self.max_research_depth = max_research_depth
+        self.max_documents_per_cycle = max_documents_per_cycle
+        self.approved_domains = approved_domains or {"research", "automation", "coding", "web tasks"}
 
     # ------------------------------------------------------------------
     # Plan-time policies
     # ------------------------------------------------------------------
-    def evaluate_plan(self, graph: TaskGraph, registry: ToolRegistry) -> None:
+    def evaluate_plan(self, graph: "TaskGraph", registry: ToolRegistry) -> None:
         self._check_metadata(graph, registry)
         self._enforce_parallel_limit(graph)
         self._check_artifacts(graph)
@@ -119,7 +127,7 @@ class PolicyEngine:
             )
             raise RuntimeError("Too many consecutive tool failures")
 
-    def validate_execution(self, node: TaskNode, registry: ToolRegistry) -> None:
+    def validate_execution(self, node: "TaskNode", registry: ToolRegistry) -> None:
         if node.tool is None:
             return
         schema = registry.get_schema(node.tool)
@@ -141,6 +149,34 @@ class PolicyEngine:
         if not issues:
             return PolicyDecision(True, "no issues")
         return PolicyDecision(False, "issues_detected", {"issues": issues})
+
+    # ------------------------------------------------------------------
+    # Research-time policies
+    # ------------------------------------------------------------------
+    def check_research_limits(self, query, depth):
+        if depth > self.max_research_depth:
+            self._record_event("block", "Research depth exceeded", {"depth": depth})
+            raise PermissionError("Requested research depth exceeds policy limits")
+        if not str(query).strip():
+            raise ValueError("Query must be non-empty for research")
+        self._record_event("allow", "Research limits validated", {"depth": depth, "query": query})
+
+    def validate_semantic_updates(self, semantic_profiles):
+        if not isinstance(semantic_profiles, dict):
+            raise ValueError("Semantic profiles must be a dictionary")
+        disallowed = [name for name in semantic_profiles if ":" in name and name.split(":")[0] not in self.approved_domains]
+        if disallowed:
+            self._record_event(
+                "block",
+                "Semantic update domain not approved",
+                {"tools": disallowed},
+            )
+            raise PermissionError("Semantic updates from unapproved domain")
+        self._record_event(
+            "allow",
+            "Semantic profiles validated",
+            {"count": len(semantic_profiles)},
+        )
 
     # ------------------------------------------------------------------
     # Utilities
