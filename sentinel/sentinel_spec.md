@@ -223,3 +223,10 @@ flowchart LR
 ### New Data Flow
 
 AutonomyLoop → ProjectEngine → PolicyEngine → Planner → ExecutionController → ReflectionEngine → ProjectEngine → DialogManager
+
+### Operational Notes
+
+- `LongHorizonProjectEngine` composes `ProjectMemory`, `PolicyEngine`, `ProjectDependencyGraph`, and `DialogManager` to deliver governed long-horizon runs.
+- Plans must be cycle-free with resolved dependencies; depth is computed automatically when absent and compared against policy thresholds.
+- `ProjectMemory` enforces schema validation and atomic, versioned writes for goals, plans, dependency graphs, execution logs, and reflections.
+- `DialogManager` can emit composite reports combining overview, progress, and dependency diagnostics for human operators.

@@ -73,3 +73,14 @@ class DialogManager:
         title = milestone_data.get("title")
         desc = milestone_data.get("description")
         return f"🏁 MILESTONE REACHED: {title}\n{desc}"
+
+    # ------------------------------------------------------------
+    # COMPOSITE STATUS
+    # ------------------------------------------------------------
+
+    def show_full_report(self, project: Dict[str, Any], progress: Dict[str, Any], issues: Dict[str, Any]) -> str:
+        sections = [self.show_project_overview(project), self.show_project_progress(progress)]
+        dependency_section = self.show_dependency_issues(issues)
+        if dependency_section:
+            sections.append(dependency_section)
+        return "\n\n".join(sections)

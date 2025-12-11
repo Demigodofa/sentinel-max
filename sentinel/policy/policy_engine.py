@@ -225,7 +225,7 @@ class PolicyEngine:
         """
 
         dependencies = plan.get("dependencies", {})
-        max_depth = max((d.get("depth", 0) for d in dependencies.values()), default=0)
+        max_depth = self._max_dependency_depth(dependencies)
 
         if max_depth > self.max_dependency_depth:
             raise PolicyViolation(
@@ -257,4 +257,37 @@ class PolicyEngine:
             raise PolicyViolation(
                 f"Project age {days} days exceeds limit {self.max_project_duration_days}"
             )
+
+    def _max_dependency_depth(self, dependencies: Dict[str, Any]) -> int:
+        def extract_depth(value: Any) -> int:
+            if isinstance(value, dict) and "depth" in value:
+                return int(value.get("depth", 0))
+            return 0
+
+        explicit_depths = [extract_depth(value) for value in dependencies.values()]
+        if any(depth > 0 for depth in explicit_depths):
+            return max(explicit_depths) if explicit_depths else 0
+
+        depths: Dict[str, int] = {}
+        visiting: Set[str] = set()
+
+        def dfs(node: str) -> int:
+            if node in depths:
+                return depths[node]
+            if node in visiting:
+                raise PolicyViolation(f"Cycle detected in dependency graph at {node}")
+            visiting.add(node)
+            deps = dependencies.get(node, [])
+            if isinstance(deps, dict):
+                deps = deps.get("depends_on", [])
+            if not isinstance(deps, list):
+                raise PolicyViolation(f"Invalid dependency format for {node}")
+            depth = 0 if not deps else 1 + max(dfs(dep) for dep in deps)
+            visiting.remove(node)
+            depths[node] = depth
+            return depth
+
+        for node in dependencies:
+            dfs(node)
+        return max(depths.values()) if depths else 0
 
