@@ -20,7 +20,13 @@ class ProjectDependencyGraph:
         stack: Set[str] = set()
         cycles: List[List[str]] = []
 
-        def visit(node: str, path: List[str]) -> None:
+        def _dependencies(node: str) -> List[str]:
+            deps = graph.get(node, [])
+            if isinstance(deps, dict):
+                return deps.get("depends_on", [])
+            return deps
+
+        def dfs(node: str, path: List[str]):
             if node in stack:
                 cycle_start = path.index(node)
                 cycles.append(path[cycle_start:] + [node])
@@ -29,8 +35,8 @@ class ProjectDependencyGraph:
                 return
             visited.add(node)
             stack.add(node)
-            for dep in graph.get(node, []):
-                visit(dep, path + [dep])
+            for dep in _dependencies(node):
+                dfs(dep, path + [dep])
             stack.remove(node)
 
         for node in graph:
@@ -42,24 +48,26 @@ class ProjectDependencyGraph:
         nodes = set(graph.keys())
         unresolved: Dict[str, List[str]] = {}
         for node, deps in graph.items():
-            missing = [dep for dep in deps if dep not in nodes]
-            if missing:
-                unresolved[node] = missing
+            dependencies = deps.get("depends_on", deps) if isinstance(deps, dict) else deps
+            for d in dependencies:
+                if d not in all_nodes:
+                    unresolved.append(d)
         return unresolved
 
     def topological_sort(self, graph: Dict[str, List[str]]) -> List[str]:
         indegree: Dict[str, int] = defaultdict(int)
         adjacency: Dict[str, Set[str]] = defaultdict(set)
 
-        for node, deps in graph.items():
-            indegree.setdefault(node, 0)
-            for dep in deps:
-                if dep in graph:
-                    indegree[node] += 1
-                    adjacency[dep].add(node)
-
-        queue: deque[str] = deque(sorted([n for n, deg in indegree.items() if deg == 0]))
-        ordered: List[str] = []
+        def dfs(node: str):
+            if node in visited:
+                return
+            visited.add(node)
+            dependencies = graph.get(node, [])
+            if isinstance(dependencies, dict):
+                dependencies = dependencies.get("depends_on", [])
+            for dep in dependencies:
+                dfs(dep)
+            order.append(node)
 
         while queue:
             current = queue.popleft()
