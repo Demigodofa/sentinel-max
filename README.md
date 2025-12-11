@@ -1,1 +1,87 @@
-Sentinel MAX
+# Sentinel MAX
+
+Enterprise-grade autonomous agent framework with long-horizon governance, reflective execution, and sandboxed tooling.
+
+## Highlights
+
+- **Long-Horizon Project Engine**: Durable project memory, dependency validation, policy-governed planning, and human-readable reporting.
+- **Policy-First Execution**: Safety, permission, determinism, and autonomy constraints enforced across planning and runtime.
+- **Memory Intelligence**: Symbolic + vector storage with curated contexts for planning, execution, and reflection.
+- **Simulation & Tooling**: Sandbox-backed tool registry, simulation sandbox, and multi-agent coordination for tool evolution.
+
+## Quickstart
+
+1. **Install dependencies**
+
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r sentinel/requirements.txt
+   ```
+
+2. **Run the agent**
+
+   CLI mode uses the shared controller and autonomy loop:
+
+   ```bash
+   python -m sentinel.main --mode cli
+   ```
+
+3. **Execute the full test suite**
+
+   ```bash
+   python -m pytest sentinel/tests
+   ```
+
+## Long-Horizon Project Engine
+
+The `LongHorizonProjectEngine` orchestrates durable project records, dependency-aware planning, policy enforcement, and dialog outputs.
+
+```python
+from sentinel.project.long_horizon_engine import LongHorizonProjectEngine
+from sentinel.project.project_memory import ProjectMemory
+
+engine = LongHorizonProjectEngine(memory=ProjectMemory())
+project = engine.create_project(
+    name="Website Refresh",
+    description="End-to-end redesign with staged rollout",
+    goals=[{"id": "g-home", "text": "Ship new homepage"}],
+)
+
+engine.register_plan(project["project_id"], [
+    {"id": "design", "action": "Design hero and layout", "depends_on": []},
+    {"id": "build", "action": "Implement responsive components", "depends_on": ["design"]},
+])
+
+engine.record_step_result(project["project_id"], "design", "completed")
+print(engine.progress_report(project["project_id"]))
+print(engine.dependency_issues(project["project_id"]))
+```
+
+### Safety & Governance
+
+- **PolicyEngine** guards project limits (goals, dependency depth, duration, refinement rounds) and blocks forbidden actions.
+- **ProjectDependencyGraph** validates cycles, unresolved nodes, and computes depth before plans are persisted.
+- **ProjectMemory** provides atomic, versioned persistence with schema validation for goals, plans, histories, and reflections.
+- **DialogManager** surfaces overviews, progress, dependency issues, and milestones for human operators.
+
+## Repository Layout
+
+- `sentinel/controller.py`: Central wiring for planner, worker, policy, memory, dialog, and autonomy loop.
+- `sentinel/policy/policy_engine.py`: Safety, preference, execution, and long-horizon governance rules.
+- `sentinel/project/long_horizon_engine.py`: Project orchestrator combining memory, policy, dependencies, and dialog outputs.
+- `sentinel/project/project_memory.py`: Versioned persistent storage for long-running projects.
+- `sentinel/project/dependency_graph.py`: Dependency normalization, validation, and depth computation.
+- `sentinel/dialog/dialog_manager.py`: Human-facing summaries and composite reports.
+- `sentinel/tests/`: Unit tests for planning, execution, autonomy, and long-horizon behaviors.
+
+## Operations
+
+- **Policy visibility**: Policy events are persisted to memory (when configured) for auditability.
+- **Sandbox execution**: Tools run inside a restricted sandbox via the worker and topological executor.
+- **Autonomy guardrails**: Time, cycle, and refinement limits enforced before each loop iteration.
+- **Reflection**: Structured reflections stored under typed namespaces support replanning and transparency.
+
+## Support
+
+For issues or contributions, open a pull request or file a ticket describing the scenario, expected behavior, and reproduction steps.
