@@ -18,6 +18,8 @@ class PlanStep:
     tool_name: Optional[str] = None
     params: Dict[str, Any] = field(default_factory=dict)
     expected_output: Optional[str] = None
+    depends_on: List[int] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
