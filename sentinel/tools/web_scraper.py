@@ -15,11 +15,21 @@ except Exception:  # pragma: no cover - optional dependency
     BeautifulSoup = None
 
 from sentinel.agent_core.base import Tool
+from sentinel.tools.tool_schema import ToolSchema
 
 
 class WebScraperTool(Tool):
     def __init__(self) -> None:
-        super().__init__("web_scraper", "Fetch raw HTML and cleaned text from a URL")
+        super().__init__("web_scraper", "Fetch raw HTML and cleaned text from a URL", deterministic=False)
+        self.schema = ToolSchema(
+            name="web_scraper",
+            version="1.0.0",
+            description="Fetch raw HTML and cleaned text from a URL",
+            input_schema={"url": {"type": "string", "required": True}, "timeout": {"type": "number", "required": False}},
+            output_schema={"type": "object", "properties": {"url": "string", "html": "string", "text": "string"}},
+            permissions=["net:read"],
+            deterministic=False,
+        )
 
     def _is_safe_domain(self, url: str) -> None:
         parsed = urlparse(url)

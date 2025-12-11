@@ -8,6 +8,7 @@ from sentinel.agent_core.base import Tool
 from sentinel.logging.logger import get_logger
 from sentinel.memory.vector_memory import VectorMemory
 from sentinel.tools.web_scraper import WebScraperTool
+from sentinel.tools.tool_schema import ToolSchema
 
 logger = get_logger(__name__)
 
@@ -24,9 +25,18 @@ def _clean_text(text: str) -> str:
 
 class InternetExtractorTool(Tool):
     def __init__(self, vector_memory: Optional[VectorMemory] = None) -> None:
-        super().__init__("internet_extract", "Search, scrape, clean, and summarize web content")
+        super().__init__("internet_extract", "Search, scrape, clean, and summarize web content", deterministic=True)
         self.scraper = WebScraperTool()
         self.vector_memory = vector_memory or VectorMemory()
+        self.schema = ToolSchema(
+            name="internet_extract",
+            version="1.0.0",
+            description="Search, scrape, clean, and summarize web content",
+            input_schema={"url": {"type": "string", "required": True}, "store": {"type": "boolean", "required": False}, "namespace": {"type": "string", "required": False}},
+            output_schema={"type": "object", "properties": {"url": "string", "clean_text": "string", "summary": "string"}},
+            permissions=["net:read", "fs:read-limited"],
+            deterministic=True,
+        )
 
     def execute(self, url: str, store: bool = True, namespace: str = "internet") -> Dict[str, Any]:
         logger.info("Extracting content from %s", url)

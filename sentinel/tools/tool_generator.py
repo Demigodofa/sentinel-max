@@ -3,10 +3,15 @@ from __future__ import annotations
 
 import ast
 from types import MappingProxyType
+from __future__ import annotations
+
+import ast
+from types import MappingProxyType
 from typing import Any, Callable, Dict, Optional
 
 from sentinel.agent_core.base import Tool
 from sentinel.tools.registry import DEFAULT_TOOL_REGISTRY, ToolRegistry
+from sentinel.tools.tool_schema import ToolSchema
 
 
 SAFE_BUILTINS = MappingProxyType(
@@ -69,9 +74,18 @@ class GeneratedTool(Tool):
         snippet: str,
         registry: Optional[ToolRegistry] = None,
     ) -> None:
-        super().__init__(name=name, description=description)
+        super().__init__(name=name, description=description, deterministic=True)
         self._snippet = snippet
         self._callable = _build_callable(snippet)
+        self.schema = ToolSchema(
+            name=name,
+            version="1.0.0",
+            description=description,
+            input_schema={"*": {"type": "object", "required": False}},
+            output_schema={"type": "any"},
+            permissions=["compute"],
+            deterministic=True,
+        )
         if registry is not None:
             registry.register(self)
 
@@ -84,7 +98,16 @@ def generate_echo_tool(prefix: str = "", registry: ToolRegistry | None = None) -
 
     class EchoTool(Tool):
         def __init__(self) -> None:
-            super().__init__("echo", "Simple echo helper")
+            super().__init__("echo", "Simple echo helper", deterministic=True)
+            self.schema = ToolSchema(
+                name="echo",
+                version="1.0.0",
+                description="Simple echo helper",
+                input_schema={"message": {"type": "string", "required": True}},
+                output_schema={"type": "string"},
+                permissions=["compute"],
+                deterministic=True,
+            )
 
         def execute(self, message: str, **_: Any) -> str:
             return f"{prefix}{message}"

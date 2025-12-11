@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import importlib
 import threading
-from typing import Dict
+from typing import Dict, Optional
 
 from sentinel.agent_core.base import Tool
 from sentinel.logging.logger import get_logger
 from sentinel.tools.browser_agent import BrowserAgent
+from sentinel.tools.tool_schema import ToolSchema, ToolValidator
 
 logger = get_logger(__name__)
 
@@ -23,6 +24,7 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: Dict[str, Tool] = {}
+        self._schemas: Dict[str, ToolSchema] = {}
         self._lock = threading.RLock()
 
     # ------------------------------------------------------------------
@@ -31,12 +33,16 @@ class ToolRegistry:
     def register(self, tool: Tool) -> None:
         """Register a :class:`Tool` instance by its unique name."""
 
-        if not isinstance(tool, Tool):
-            raise TypeError("Only Tool instances may be registered")
+        schema = getattr(tool, "schema", None)
+        if not isinstance(schema, ToolSchema):
+            raise TypeError(f"Tool '{getattr(tool, 'name', '<unknown>')}' missing ToolSchema metadata")
+        ToolValidator.validate(tool, schema)
+
         with self._lock:
             if tool.name in self._tools:
                 raise ValueError(f"Tool '{tool.name}' is already registered")
             self._tools[tool.name] = tool
+            self._schemas[tool.name] = schema
             logger.info("Registered tool: %s", tool.name)
 
     def load_dynamic(self, module_path: str, attribute: str | None = None) -> Tool:
@@ -76,6 +82,10 @@ class ToolRegistry:
                 raise KeyError(f"Tool '{name}' not registered")
             return self._tools[name]
 
+    def get_schema(self, name: str) -> Optional[ToolSchema]:
+        with self._lock:
+            return self._schemas.get(name)
+
     def call(self, name: str, **kwargs):
         tool = self.get(name)
         logger.info("Executing tool %s with %s", name, kwargs)
@@ -84,6 +94,10 @@ class ToolRegistry:
     def list_tools(self) -> Dict[str, Tool]:
         with self._lock:
             return dict(self._tools)
+
+    def describe_tools(self) -> Dict[str, Dict]:
+        with self._lock:
+            return {name: schema.to_dict() for name, schema in self._schemas.items()}
 
     def has_tool(self, name: str) -> bool:
         with self._lock:

@@ -14,9 +14,12 @@ from typing import Optional, Any, Dict
 
 from sentinel.agent_core.base import Tool
 from sentinel.logging.logger import get_logger
+from sentinel.tools.tool_schema import ToolSchema
 
 # Playwright (headless mode)
-if importlib.util.find_spec("playwright.sync_api"):
+playwright_root = importlib.util.find_spec("playwright")
+playwright_spec = importlib.util.find_spec("playwright.sync_api") if playwright_root else None
+if playwright_spec:
     from playwright.sync_api import sync_playwright
     PLAYWRIGHT_AVAILABLE = True
 else:
@@ -24,8 +27,16 @@ else:
 
 # CDP visible-mode support (Chrome DevTools Protocol)
 import json
-import websockets
-import requests
+websockets_spec = importlib.util.find_spec("websockets")
+if websockets_spec:
+    import websockets  # type: ignore
+else:
+    websockets = None
+requests_spec = importlib.util.find_spec("requests")
+if requests_spec:
+    import requests  # type: ignore
+else:
+    requests = None
 
 
 log = get_logger(__name__)
@@ -47,13 +58,29 @@ class BrowserAgent(Tool):
     description = "Unified headless/visible browser automation tool."
 
     def __init__(self):
-        super().__init__(self.name, self.description)
+        super().__init__(self.name, self.description, deterministic=False)
         self.headless_browser = None
         self.headless_page = None
 
         # CDP
         self.cdp_ws = None
         self.cdp_id_counter = 1
+        self.schema = ToolSchema(
+            name="browser_agent",
+            version="1.0.0",
+            description=self.description,
+            input_schema={
+                "mode": {"type": "string", "required": False},
+                "action": {"type": "string", "required": True},
+                "selector": {"type": "string", "required": False},
+                "url": {"type": "string", "required": False},
+                "script": {"type": "string", "required": False},
+                "value": {"type": "string", "required": False},
+            },
+            output_schema={"type": "object"},
+            permissions=["net:read", "browser"],
+            deterministic=False,
+        )
 
     # ================================
     # Internal helpers

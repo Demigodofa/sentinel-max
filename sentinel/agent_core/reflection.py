@@ -19,8 +19,9 @@ class Reflector:
     def __init__(self, memory: MemoryManager) -> None:
         self.memory = memory
 
-    def reflect(self, trace: ExecutionTrace) -> str:
+    def reflect(self, trace: ExecutionTrace, reflection_type: str = "operational") -> str:
         summary = summarize_trace(trace)
-        self.memory.store_text(summary, namespace="reflection", metadata={"summary": True})
-        logger.info("Reflection recorded")
+        namespace = f"reflection.{reflection_type}" if reflection_type else "reflection"
+        self.memory.store_text(summary, namespace=namespace, metadata={"summary": True})
+        logger.info("Reflection recorded for %s", reflection_type)
         return summary
