@@ -9,6 +9,7 @@ from sentinel.agent_core.worker import Worker
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.planning.adaptive_planner import AdaptivePlanner
+from sentinel.planning.task_graph import TaskGraph
 from sentinel.agent_core.reflection import Reflector
 
 log = get_logger(__name__)
@@ -112,6 +113,28 @@ class AutonomyLoop:
             self._record_reflection(trace, "strategic", f"cycle_{cycle}_progress", current_goal)
             time.sleep(self.interval)
 
+        self.stop()
+        return trace
+
+    def run_graph(
+        self,
+        graph: TaskGraph,
+        goal: str,
+        exit_conditions: Optional[Dict[str, Any]] = None,
+    ) -> ExecutionTrace:
+        """Execute a pre-built task graph and record reflections."""
+
+        exit_conditions = exit_conditions or {}
+        trace = ExecutionTrace()
+        self._running = True
+        self.memory.store_text(goal, namespace="goals", metadata={"type": "normalized"})
+        cycle_trace = self.worker.run(graph)
+        self._merge_trace(trace, cycle_trace)
+        self._record_reflection(cycle_trace, "operational", "graph-execution", goal)
+        if not cycle_trace.failed_nodes and self._goal_completed(exit_conditions, cycle_trace):
+            self._record_reflection(cycle_trace, "user-preference", "graph-complete", goal)
+        else:
+            self._record_reflection(cycle_trace, "self-model", "graph-followup", goal)
         self.stop()
         return trace
 

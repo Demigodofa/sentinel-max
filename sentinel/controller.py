@@ -8,7 +8,7 @@ from sentinel.agent_core.reflection import Reflector
 from sentinel.agent_core.sandbox import Sandbox
 from sentinel.agent_core.self_mod import SelfModificationEngine
 from sentinel.agent_core.worker import Worker
-from sentinel.dialog_manager import DialogManager
+from sentinel.conversation import ConversationController, DialogManager, IntentEngine, NLToTaskGraph
 from sentinel.logging.logger import get_logger
 from sentinel.memory.intelligence import MemoryContextBuilder
 from sentinel.memory.memory_manager import MemoryManager
@@ -39,6 +39,8 @@ class SentinelController:
         self._register_default_tools()
 
         self.dialog_manager = DialogManager(self.memory, self.world_model)
+        self.intent_engine = IntentEngine(self.memory, self.world_model, self.tool_registry)
+        self.nl_to_taskgraph = NLToTaskGraph(self.tool_registry, self.policy_engine, self.world_model)
 
         self.planner = AdaptivePlanner(
             self.tool_registry,
@@ -67,6 +69,17 @@ class SentinelController:
             timeout=5.0,
         )
 
+        self.conversation_controller = ConversationController(
+            dialog_manager=self.dialog_manager,
+            intent_engine=self.intent_engine,
+            nl_to_taskgraph=self.nl_to_taskgraph,
+            autonomy=self.autonomy,
+            planner=self.planner,
+            memory=self.memory,
+            world_model=self.world_model,
+            simulation_sandbox=self.simulation_sandbox,
+        )
+
         self.patch_auditor = PatchAuditor()
         self.self_mod = SelfModificationEngine(self.patch_auditor)
         self.hot_reloader = HotReloader()
@@ -79,15 +92,12 @@ class SentinelController:
         generate_echo_tool(prefix="Echo: ", registry=self.tool_registry)
 
     def process_input(self, message: str) -> str:
+        result = self.process_conversation(message)
+        return result.get("response", "")
+
+    def process_conversation(self, message: str) -> dict:
         logger.info("Processing user input: %s", message)
-        dialog_context = self.dialog_manager.build_context(message)
-        trace = self.autonomy.run(message, timeout=2.0)
-        latest_reflection = self.memory.latest("reflection.operational") or self.memory.latest(
-            "reflection"
-        )
-        response = latest_reflection.content if latest_reflection else trace.summary()
-        self.dialog_manager.record_turn(message, response, context=dialog_context)
-        return response
+        return self.conversation_controller.handle_input(message)
 
     def export_state(self):
         tools = {
