@@ -225,7 +225,11 @@ class PolicyEngine:
         """
 
         dependencies = plan.get("dependencies", {})
+codex/add-policy-engine-and-dialog-manager-5opt9i
         max_depth = self._max_dependency_depth(dependencies)
+=======
+        max_depth = max((d.get("depth", 0) for d in dependencies.values()), default=0)
+
 
         if max_depth > self.max_dependency_depth:
             raise PolicyViolation(
@@ -258,6 +262,7 @@ class PolicyEngine:
                 f"Project age {days} days exceeds limit {self.max_project_duration_days}"
             )
 
+codex/add-policy-engine-and-dialog-manager-5opt9i
     def _max_dependency_depth(self, dependencies: Dict[str, Any]) -> int:
         def extract_depth(value: Any) -> int:
             if isinstance(value, dict) and "depth" in value:
@@ -291,3 +296,4 @@ class PolicyEngine:
             dfs(node)
         return max(depths.values()) if depths else 0
 
+ main

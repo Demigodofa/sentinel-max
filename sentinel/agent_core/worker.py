@@ -89,3 +89,7 @@ class Worker:
             except Exception as exc:  # pragma: no cover - defensive logging
                 logger.warning("Failed to persist real execution metadata: %s", exc)
         return result
+
+
+# Compatibility alias for long-horizon orchestration components
+SentinelWorker = Worker
