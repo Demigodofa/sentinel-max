@@ -1,0 +1,366 @@
+{
+  "namespaces": {
+    "world_model": {
+      "state": {
+        "key": "state",
+        "namespace": "world_model",
+        "value": {
+          "domains": {
+            "coding": {
+              "name": "coding",
+              "capabilities": [
+                "analysis",
+                "debugging",
+                "implementation",
+                "testing"
+              ],
+              "typical_goals": [
+                "fix bug",
+                "refactor",
+                "build tool",
+                "optimize scraper"
+              ]
+            },
+            "multi-service": {
+              "name": "multi-service",
+              "capabilities": [
+                "microservices",
+                "api design",
+                "service composition",
+                "orchestration"
+              ],
+              "typical_goals": [
+                "build microservice",
+                "compose services",
+                "design api"
+              ]
+            },
+            "pipelines": {
+              "name": "pipelines",
+              "capabilities": [
+                "data ingestion",
+                "transforms",
+                "scheduling",
+                "quality checks"
+              ],
+              "typical_goals": [
+                "design a data pipeline",
+                "batch processing",
+                "stream processing"
+              ]
+            },
+            "devops": {
+              "name": "devops",
+              "capabilities": [
+                "deployment",
+                "monitoring",
+                "infrastructure",
+                "ci/cd"
+              ],
+              "typical_goals": [
+                "deploy service",
+                "configure ci",
+                "observability"
+              ]
+            },
+            "web tasks": {
+              "name": "web tasks",
+              "capabilities": [
+                "scraping",
+                "extraction",
+                "navigation",
+                "session management"
+              ],
+              "typical_goals": [
+                "pull prices",
+                "scrape website",
+                "simulate browser",
+                "collect links"
+              ]
+            },
+            "research": {
+              "name": "research",
+              "capabilities": [
+                "literature review",
+                "evidence collection",
+                "summarization",
+                "citation"
+              ],
+              "typical_goals": [
+                "investigate topic",
+                "compare approaches",
+                "gather references"
+              ]
+            },
+            "optimization": {
+              "name": "optimization",
+              "capabilities": [
+                "profiling",
+                "performance tuning",
+                "efficiency",
+                "coding"
+              ],
+              "typical_goals": [
+                "optimize the scraper",
+                "reduce latency",
+                "improve throughput"
+              ]
+            },
+            "automation": {
+              "name": "automation",
+              "capabilities": [
+                "workflow orchestration",
+                "scheduling",
+                "eventing",
+                "integration"
+              ],
+              "typical_goals": [
+                "automate task",
+                "connect systems",
+                "schedule workflow"
+              ]
+            }
+          },
+          "resources": {
+            "file_resource": {
+              "name": "file_resource",
+              "type": "file_resource",
+              "metadata": {
+                "description": "Local or remote files"
+              }
+            },
+            "code_artifact": {
+              "name": "code_artifact",
+              "type": "code_artifact",
+              "metadata": {
+                "description": "Source code or binaries"
+              }
+            },
+            "service": {
+              "name": "service",
+              "type": "service",
+              "metadata": {
+                "description": "APIs or microservices"
+              }
+            },
+            "pipeline": {
+              "name": "pipeline",
+              "type": "pipeline",
+              "metadata": {
+                "description": "Data processing pipeline"
+              }
+            },
+            "browser_context": {
+              "name": "browser_context",
+              "type": "browser_context",
+              "metadata": {
+                "description": "Automated browser session"
+              }
+            },
+            "data_source": {
+              "name": "data_source",
+              "type": "data_source",
+              "metadata": {
+                "description": "Databases, APIs, or web sources"
+              }
+            }
+          },
+          "dependencies": {
+            "requires": {
+              "code_artifact": [
+                "file_resource"
+              ]
+            },
+            "produces": {}
+          }
+        },
+        "metadata": {
+          "source": "world_model"
+        },
+        "created_at": "2025-12-12T02:16:18.247821+00:00",
+        "updated_at": "2025-12-12T02:51:47.153357+00:00"
+      }
+    },
+    "dialog_prefs": {
+      "persona": {
+        "key": "persona",
+        "namespace": "dialog_prefs",
+        "value": "Professional + Concise",
+        "metadata": {
+          "source": "dialog_manager"
+        },
+        "created_at": "2025-12-12T02:16:18.259822+00:00",
+        "updated_at": "2025-12-12T02:42:43.470996+00:00"
+      }
+    },
+    "normalized_goals": {
+      "41af7bd5-422b-4847-bec9-37cf36b4c765": {
+        "key": "41af7bd5-422b-4847-bec9-37cf36b4c765",
+        "namespace": "normalized_goals",
+        "value": {
+          "goal": "Goal[general_goal] in domain=coding with parameters: browser_actions=[], domain_capabilities=['analysis', 'debugging', 'implementation', 'testing'], resources=['file_resource', 'code_artifact']; constraints: none; preferences: Concise; Professional",
+          "ambiguities": [
+            "Please clarify the exact outcome you want and priority constraints."
+          ]
+        },
+        "metadata": {
+          "intent": "general_goal",
+          "domain": "coding"
+        },
+        "created_at": "2025-12-12T02:44:28.937020+00:00",
+        "updated_at": "2025-12-12T02:44:28.937020+00:00"
+      },
+      "03101151-05de-4609-9bc3-ce2f9a6c9354": {
+        "key": "03101151-05de-4609-9bc3-ce2f9a6c9354",
+        "namespace": "normalized_goals",
+        "value": {
+          "goal": "Goal[general_goal] in domain=coding with parameters: browser_actions=[], domain_capabilities=['analysis', 'debugging', 'implementation', 'testing'], resources=['file_resource', 'code_artifact']; constraints: none; preferences: Concise; Professional",
+          "ambiguities": [
+            "Please clarify the exact outcome you want and priority constraints."
+          ]
+        },
+        "metadata": {
+          "intent": "general_goal",
+          "domain": "coding"
+        },
+        "created_at": "2025-12-12T02:48:21.896454+00:00",
+        "updated_at": "2025-12-12T02:48:21.896454+00:00"
+      },
+      "6d3f8414-49dd-4d2a-bd6c-0a258254d862": {
+        "key": "6d3f8414-49dd-4d2a-bd6c-0a258254d862",
+        "namespace": "normalized_goals",
+        "value": {
+          "goal": "Goal[general_goal] in domain=coding with parameters: browser_actions=[], domain_capabilities=['analysis', 'debugging', 'implementation', 'testing'], file_path={'namespace': 'file_resource', 'status': 'unknown'}, resources=['file_resource', 'code_artifact']; constraints: none; preferences: Concise; Professional",
+          "ambiguities": [
+            "Please clarify the exact outcome you want and priority constraints.",
+            "Which artifact or service does 'it/that' refer to?"
+          ]
+        },
+        "metadata": {
+          "intent": "general_goal",
+          "domain": "coding"
+        },
+        "created_at": "2025-12-12T02:51:47.309773+00:00",
+        "updated_at": "2025-12-12T02:51:47.309773+00:00"
+      }
+    },
+    "goals": {
+      "579893ac-2b4a-4129-932f-1bd762c7a2c2": {
+        "key": "579893ac-2b4a-4129-932f-1bd762c7a2c2",
+        "namespace": "goals",
+        "value": {
+          "text": "Goal[general_goal] in domain=coding with parameters: browser_actions=[], domain_capabilities=['analysis', 'debugging', 'implementation', 'testing'], resources=['file_resource', 'code_artifact']; constraints: none; preferences: Concise; Professional",
+          "metadata": {
+            "type": "normalized"
+          },
+          "timestamp": "2025-12-12T02:44:28.939013+00:00",
+          "type": "text"
+        },
+        "metadata": {},
+        "created_at": "2025-12-12T02:44:28.939013+00:00",
+        "updated_at": "2025-12-12T02:44:28.939013+00:00"
+      },
+      "7a911173-3299-46d1-bf85-d3fce42f521b": {
+        "key": "7a911173-3299-46d1-bf85-d3fce42f521b",
+        "namespace": "goals",
+        "value": {
+          "text": "Goal[general_goal] in domain=coding with parameters: browser_actions=[], domain_capabilities=['analysis', 'debugging', 'implementation', 'testing'], file_path={'namespace': 'file_resource', 'status': 'unknown'}, resources=['file_resource', 'code_artifact']; constraints: none; preferences: Concise; Professional",
+          "metadata": {
+            "type": "normalized"
+          },
+          "timestamp": "2025-12-12T02:51:47.312037+00:00",
+          "type": "text"
+        },
+        "metadata": {},
+        "created_at": "2025-12-12T02:51:47.312037+00:00",
+        "updated_at": "2025-12-12T02:51:47.312037+00:00"
+      }
+    },
+    "dialog_turns": {
+      "69f4a482-a4e4-4402-99b5-1785591ea530": {
+        "key": "69f4a482-a4e4-4402-99b5-1785591ea530",
+        "namespace": "dialog_turns",
+        "value": {
+          "user_message": "Help me create a new project.",
+          "response": "I need a precise target before executing. Clarifications needed: Please clarify the exact outcome you want and priority constraints.",
+          "context": {
+            "recent_turns": [],
+            "preferences": [
+              "Professional + Concise"
+            ],
+            "active_goals": []
+          },
+          "questions": [
+            "Please clarify the exact outcome you want and priority constraints."
+          ],
+          "task_graph": null
+        },
+        "metadata": {
+          "source": "dialog_manager"
+        },
+        "created_at": "2025-12-12T02:44:28.941013+00:00",
+        "updated_at": "2025-12-12T02:44:28.941013+00:00"
+      },
+      "e0ff1b7f-525f-4783-be9d-4997a153d29b": {
+        "key": "e0ff1b7f-525f-4783-be9d-4997a153d29b",
+        "namespace": "dialog_turns",
+        "value": {
+          "user_message": "create a new project: Make a desktop utility program that renames files in bulk.Priority:high. Constraints: must run on Windows. Output:Working python script.",
+          "response": "I need a precise target before executing. Clarifications needed: Please clarify the exact outcome you want and priority constraints.; Which artifact or service does 'it/that' refer to?",
+          "context": {
+            "recent_turns": [
+              {
+                "user": "Help me create a new project.",
+                "agent": "I need a precise target before executing. Clarifications needed: Please clarify the exact outcome you want and priority constraints."
+              }
+            ],
+            "preferences": [
+              "Professional + Concise"
+            ],
+            "active_goals": [
+              "Goal[general_goal] in domain=coding with parameters: browser_actions=[], domain_capabilities=['analysis', 'debugging', 'implementation', 'testing'], resources=['file_resource', 'code_artifact']; constraints: none; preferences: Concise; Professional"
+            ]
+          },
+          "questions": [
+            "Please clarify the exact outcome you want and priority constraints.",
+            "Which artifact or service does 'it/that' refer to?"
+          ],
+          "task_graph": null
+        },
+        "metadata": {
+          "source": "dialog_manager"
+        },
+        "created_at": "2025-12-12T02:51:47.314041+00:00",
+        "updated_at": "2025-12-12T02:51:47.314041+00:00"
+      }
+    },
+    "simulations": {
+      "simulation_only_general_goal": {
+        "key": "simulation_only_general_goal",
+        "namespace": "simulations",
+        "value": {
+          "analyze_goal": {
+            "success": true,
+            "predicted_outputs": {
+              "artifact_1_analyze_goal": "Pass-through node"
+            },
+            "predicted_vfs_changes": {},
+            "benchmark": {
+              "complexity": "O(1)",
+              "relative_speed": 10,
+              "notes": "No-op node",
+              "failure_likelihood": 0.0
+            },
+            "warnings": []
+          }
+        },
+        "metadata": {
+          "mode": "simulation_only"
+        },
+        "created_at": "2025-12-12T02:48:21.904446+00:00",
+        "updated_at": "2025-12-12T02:48:21.904446+00:00"
+      }
+    }
+  },
+  "updated_at": "2025-12-12T02:51:47.314041+00:00"
+}
