@@ -31,7 +31,6 @@ TASK_PREFIXES = (
     "run ",
 )
 
- codex/fix-task-routing-for-llm-tools
 WEB_TASK_PATTERNS = (
     r"\b(search the web|web search|google|look up|lookup|find online)\b",
     r"\b(go online|go on the internet|search online|find on the internet|browse online)\b",
@@ -60,8 +59,6 @@ ACTION_TRIGGERS = (
     "open ",
     "scrape",
 )
-
-main
 
 def classify_intent(text: str) -> Intent:
     if not text or not text.strip():
