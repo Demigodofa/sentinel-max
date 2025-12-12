@@ -1,9 +1,11 @@
 """Tkinter GUI bootstrap for Sentinel MAX."""
 from __future__ import annotations
 
+import sys
 import tkinter as tk
 from tkinter import ttk
 
+from sentinel.gui.clipboard import install as install_clipboard
 from sentinel.gui.theme import load_theme
 from sentinel.gui.widgets.chat_log import ChatLog
 from sentinel.gui.widgets.input_panel import InputPanel
@@ -14,16 +16,18 @@ def run_gui_app() -> None:
     root = tk.Tk()
     root.title("Sentinel MAX")
 
-    # Windows ttk native themes often ignore background colors.
-    # Force a theme that respects style settings.
+    # On Windows, force a reliable theme to avoid invisible entry text when ttk styles misbehave.
     style = ttk.Style(root)
-    try:
-        style.theme_use("clam")
-    except Exception:
-        pass
+    if sys.platform.startswith("win"):
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
 
     root.configure(bg=theme["colors"]["app_bg"])
     root.minsize(760, 520)
+
+    install_clipboard(root)
 
     app = SentinelApp(root, theme=theme)
     root.mainloop()
