@@ -42,7 +42,7 @@ class LogPanel(ttk.Frame):
         )
         self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.text.yview)
         self.text.configure(yscrollcommand=self.scrollbar.set)
-        self.text.configure(state="normal")
+        self.text.configure(state="disabled")
 
         self.text.bind("<Button-3>", self._open_menu)
 
@@ -65,13 +65,11 @@ class LogPanel(ttk.Frame):
         if not lines:
             return
 
+        self.text.configure(state="normal")
         for line in lines:
             self.text.insert(tk.END, line.rstrip() + "\n")
         self.text.see(tk.END)
-
-    def _copy(self, event=None):  # type: ignore[override]
-        self.text.event_generate("<<Copy>>")
-        return "break"
+        self.text.configure(state="disabled")
 
     def _copy_menu(self) -> None:
         self.text.event_generate("<<Copy>>")
@@ -87,10 +85,6 @@ class LogPanel(ttk.Frame):
                 self.text.clipboard_append(clip)
         except Exception:
             pass
-
-    def _select_all(self, event=None):  # type: ignore[override]
-        self.text.tag_add("sel", "1.0", "end-1c")
-        return "break"
 
     def _select_all_menu(self) -> None:
         self.text.tag_add("sel", "1.0", "end-1c")

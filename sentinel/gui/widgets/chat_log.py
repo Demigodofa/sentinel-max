@@ -55,6 +55,9 @@ class ChatLog(ttk.Frame):
         self.text.tag_configure("agent", spacing1=6, spacing3=10)
         self.text.tag_configure("meta", foreground=c["muted"], font=self.fonts["mono"])
 
+        # Make it read-only but still selectable
+        self.text.configure(state="disabled")
+
         self.text.bind("<Button-3>", self._open_menu)  # right click
 
         self._menu = tk.Menu(self, tearoff=0)
@@ -73,14 +76,8 @@ class ChatLog(ttk.Frame):
 
         self.text.configure(state="normal")
         self.text.insert("end", prefix + message.strip() + "\n", tag)
-        self.text.configure(state="normal")
+        self.text.configure(state="disabled")
         self.text.see("end")
-
-    def _copy(self, event=None):  # type: ignore[override]
-        try:
-            self.text.event_generate("<<Copy>>")
-        finally:
-            return "break"
 
     def _copy_menu(self) -> None:
         self.text.event_generate("<<Copy>>")
@@ -97,10 +94,6 @@ class ChatLog(ttk.Frame):
                 self.text.clipboard_append(clip)
         except Exception:
             pass
-
-    def _select_all(self, event=None):  # type: ignore[override]
-        self.text.tag_add("sel", "1.0", "end-1c")
-        return "break"
 
     def _select_all_menu(self) -> None:
         self.text.tag_add("sel", "1.0", "end-1c")
