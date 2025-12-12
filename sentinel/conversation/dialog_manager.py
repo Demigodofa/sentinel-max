@@ -115,7 +115,7 @@ class DialogManager:
         header = f"I hear you're aiming for: {goal_statement}."
         readiness = (
             "I can brief the specialists and orchestrate the work once you give the go-ahead. "
-            "Say '/auto' or tell me to start when you're ready."
+            "Say 'yes' or use `/auto` to run the proposed plan when you're ready."
         )
         tone = f"I'll keep it {preference_view.lower()} while we plan within the {domain} space."
         return self.format_agent_response(" ".join([header, readiness, tone]), clarifications=clarifications)
