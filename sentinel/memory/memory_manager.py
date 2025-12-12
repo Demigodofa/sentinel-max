@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +50,11 @@ class MemoryManager:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Store a free-form text snippet in both symbolic and vector memories."""
+        if not isinstance(text, str):
+            try:
+                text = json.dumps(text, ensure_ascii=False)
+            except Exception:
+                text = str(text)
         timestamp = datetime.now(timezone.utc).isoformat()
         metadata = metadata or {}
         record_key = str(uuid4())

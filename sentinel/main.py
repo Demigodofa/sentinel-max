@@ -18,7 +18,6 @@ import sys
 from sentinel.controller import SentinelController
 from sentinel.gui.app import run_gui_app
 from sentinel.server.main import app as fastapi_app
-import uvicorn
 
 
 APP_NAME = "Sentinel MAX"
@@ -47,6 +46,8 @@ def run_server() -> int:
     """Start the FastAPI server."""
     print(f"{APP_NAME} — Server mode")
     print("Launching FastAPI backend at http://127.0.0.1:8000 ...")
+
+    import uvicorn
 
     uvicorn.run(
         "sentinel.server.main:app",
