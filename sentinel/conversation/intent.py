@@ -3,31 +3,41 @@ from enum import Enum, auto
 
 class Intent(Enum):
     CONVERSATION = auto()
-    INFORMATION = auto()
-    TASK_REQUEST = auto()
+    TASK = auto()
     AUTONOMY_TRIGGER = auto()
 
 
 AUTONOMY_KEYWORDS = {
-    "/auto",
     "run autonomously",
     "start autonomy",
     "execute autonomously",
-    "go ahead",
-    "do it",
+    "autonomy mode",
+    "proceed autonomously",
 }
+
+TASK_PREFIXES = (
+    "build ",
+    "create ",
+    "implement ",
+    "draft ",
+    "design ",
+    "develop ",
+    "write ",
+    "compose ",
+    "plan ",
+    "generate ",
+    "run ",
+)
 
 
 def classify_intent(text: str) -> Intent:
-    t = text.lower().strip()
+    normalized = text.strip()
+    lowered = normalized.lower()
 
-    if any(k in t for k in AUTONOMY_KEYWORDS):
+    if lowered.startswith("/auto") or any(keyword in lowered for keyword in AUTONOMY_KEYWORDS):
         return Intent.AUTONOMY_TRIGGER
 
-    if t.startswith(("/", "run ", "build ", "create ", "implement ")):
-        return Intent.TASK_REQUEST
+    if lowered.startswith(TASK_PREFIXES):
+        return Intent.TASK
 
-    if "?" in t or len(t.split()) < 6:
-        return Intent.CONVERSATION
-
-    return Intent.INFORMATION
+    return Intent.CONVERSATION
