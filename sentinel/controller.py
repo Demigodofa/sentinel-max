@@ -1,6 +1,8 @@
 """Sentinel MAX controller orchestrating Agent Core components."""
 from __future__ import annotations
 
+import json
+
 from sentinel.agent_core.autonomy import AutonomyLoop
 from sentinel.agent_core.hot_reload import HotReloader
 from sentinel.agent_core.patch_auditor import PatchAuditor
@@ -112,6 +114,10 @@ class SentinelController:
         generate_echo_tool(prefix="Echo: ", registry=self.tool_registry)
 
     def process_input(self, message: str) -> str:
+        command_response = self._handle_cli_command(message)
+        if command_response is not None:
+            return command_response
+
         result = self.process_conversation(message)
         return result.get("response", "")
 
@@ -125,3 +131,41 @@ class SentinelController:
         }
         world_model_state = self.memory.query("world_model", key="state")
         return {"memory": self.memory.export_state(), "tools": tools, "world_model": world_model_state}
+
+    # ------------------------------------------------------------------
+    # CLI-only helper commands
+    # ------------------------------------------------------------------
+    def _handle_cli_command(self, message: str) -> str | None:
+        if not message.startswith("/"):
+            return None
+
+        if message.strip() == "/tools":
+            tools = sorted(self.tool_registry.list_tools().keys())
+            return "Available tools: " + (", ".join(tools) if tools else "No tools registered.")
+
+        if message.startswith("/tool"):
+            parts = message.split(maxsplit=2)
+            if len(parts) < 3:
+                return "Usage: /tool <name> <json_args>"
+
+            tool_name = parts[1]
+            raw_args = parts[2]
+
+            try:
+                args = json.loads(raw_args) if raw_args else {}
+            except json.JSONDecodeError as exc:
+                return f"Invalid JSON args: {exc}"
+
+            if not isinstance(args, dict):
+                return "Tool arguments must be a JSON object."
+
+            if not self.tool_registry.has_tool(tool_name):
+                return f"Tool '{tool_name}' not registered."
+
+            try:
+                output = self.sandbox.execute(self.tool_registry.call, tool_name, **args)
+                return str(output)
+            except Exception as exc:  # pragma: no cover - runtime errors surfaced to user
+                return f"Tool '{tool_name}' execution failed: {exc}"
+
+        return None
