@@ -31,6 +31,25 @@ TASK_PREFIXES = (
     "run ",
 )
 
+ACTION_TRIGGERS = (
+    "make ",
+    "create ",
+    "build ",
+    "write ",
+    "generate ",
+    "fix ",
+    "debug ",
+    "install ",
+    "search ",
+    "look up",
+    "go online",
+    "download ",
+    "refactor ",
+    "run tests",
+    "open ",
+    "scrape",
+)
+
 
 def classify_intent(text: str) -> Intent:
     if not text or not text.strip():
@@ -51,6 +70,9 @@ def classify_intent(text: str) -> Intent:
         return Intent.AUTONOMY_TRIGGER
 
     if lowered.startswith(TASK_PREFIXES):
+        return Intent.TASK
+
+    if any(trigger in lowered for trigger in ACTION_TRIGGERS):
         return Intent.TASK
 
     return Intent.CONVERSATION
