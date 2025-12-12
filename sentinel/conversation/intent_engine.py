@@ -27,6 +27,9 @@ class NormalizedGoal:
 
     type: str
     domain: str
+    # IMPORTANT: the rest of the code already prints browser_actions=[]
+    # so we keep using that convention:
+    # parameters["browser_actions"] = ["web_search:<query>"]
     parameters: Dict[str, object] = field(default_factory=dict)
     constraints: List[str] = field(default_factory=list)
     preferences: List[str] = field(default_factory=list)
@@ -325,6 +328,15 @@ class IntentEngine:
             if plugin_preferences:
                 preferences = self._merge_preferences(preferences, plugin_preferences)
 
+        search_query = self._extract_web_search_query(text)
+        domain_override = intent.domain
+        if search_query:
+            domain_override = "research"
+            parameters = dict(parameters or {})
+            browser_actions = list(parameters.get("browser_actions", []) or [])
+            browser_actions.append(f"web_search:{search_query}")
+            parameters["browser_actions"] = browser_actions
+
         context = {
             "world": metadata.get("resources", []),
             "tools": metadata.get("tools", {}),
@@ -332,7 +344,7 @@ class IntentEngine:
         }
         normalized = NormalizedGoal(
             type=goal_type,
-            domain=intent.domain,
+            domain=domain_override,
             parameters=parameters,
             constraints=metadata.get("constraints", []) if isinstance(metadata, dict) else [],
             preferences=preferences,
@@ -348,6 +360,23 @@ class IntentEngine:
             metadata={"intent": intent.intent, "domain": intent.domain},
         )
         return normalized
+
+    def _extract_web_search_query(self, text: str) -> Optional[str]:
+        raw = text.strip()
+        lowered = raw.lower()
+        if not re.search(r"\b(search the web|web search|google|look up|lookup|find online)\b", lowered):
+            return None
+
+        quoted = re.search(r"\"([^\"]+)\"|'([^']+)'", raw)
+        if quoted:
+            return quoted.group(1) or quoted.group(2)
+
+        query = re.sub(
+            r"(?i)\b(search the web for|search the web|web search for|web search|google|look up|lookup|find online)\b",
+            "",
+            raw,
+        ).strip(" :,-")
+        return query or raw
 
     def _merge_preferences(self, base: List[str], additions: List[str]) -> List[str]:
         merged: List[str] = []

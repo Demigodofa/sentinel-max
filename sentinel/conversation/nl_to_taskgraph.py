@@ -1,7 +1,7 @@
 """Natural language to TaskGraph translation layer."""
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from sentinel.logging.logger import get_logger
 from sentinel.planning.task_graph import GraphValidator, TaskGraph, TaskNode
@@ -29,6 +29,47 @@ class NLToTaskGraph:
         self.validator = validator or GraphValidator(tool_registry)
 
     def translate(self, normalized_goal: NormalizedGoal) -> TaskGraph:
+        params: Dict[str, Any] = getattr(normalized_goal, "parameters", {}) or {}
+        browser_actions: List[str] = list(params.get("browser_actions") or [])
+
+        # If the user asked for a web search, ALWAYS create a web_search node.
+        # This avoids the current behavior where it "notes" the request but does nothing.
+        for action in browser_actions:
+            if isinstance(action, str) and action.startswith("web_search:"):
+                query = action.split("web_search:", 1)[1].strip() or normalized_goal.as_goal_statement()
+
+                search_node = TaskNode(
+                    id="web_search",
+                    description=f"Search the web for: {query}",
+                    tool="web_search",
+                    args={"query": query, "max_results": 5},
+                    requires=[],
+                    produces=["web_results"],
+                    parallelizable=False,
+                )
+                summarize_node = TaskNode(
+                    id="summarize_results",
+                    description="Summarize web search results",
+                    tool=None,
+                    args={"source": "web_results"},
+                    requires=["web_results"],
+                    produces=["web_summary"],
+                    parallelizable=True,
+                )
+
+                nodes = [search_node, summarize_node]
+                subgoals = [
+                    {"name": "web_search", "action": "perform search", "parallelizable": False},
+                    {"name": "summarize_results", "action": "summarize", "parallelizable": True},
+                ]
+                self._attach_validation(nodes, normalized_goal)
+                metadata = self._build_metadata(normalized_goal, nodes, subgoals)
+                graph = TaskGraph(nodes, metadata=metadata)
+                available_inputs = set(normalized_goal.parameters.keys())
+                self.validator.validate(graph, available_inputs=available_inputs)
+                self.policy_engine.evaluate_plan(graph, self.tool_registry)
+                return graph
+
         subgoals = self._derive_subgoals(normalized_goal)
         nodes = self._build_nodes(normalized_goal, subgoals)
         self._attach_validation(nodes, normalized_goal)
