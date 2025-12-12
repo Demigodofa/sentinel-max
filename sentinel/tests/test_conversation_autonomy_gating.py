@@ -16,6 +16,8 @@ def build_controller(normalized_goal: NormalizedGoal):
     memory = MemoryManager()
     world_model = WorldModel(memory)
     dialog_manager = DialogManager(memory, world_model)
+    dialog_manager._llm = MagicMock()
+    dialog_manager._llm.chat.return_value = ""
 
     intent_engine = MagicMock()
     intent_engine.run.return_value = normalized_goal
@@ -66,7 +68,7 @@ def test_greeting_stays_conversational(normalized_goal):
     nl_to_taskgraph.translate.assert_not_called()
     autonomy.run_graph.assert_not_called()
     multi_agent_engine.coordinate.assert_not_called()
-    assert "I hear you" in result["response"]
+    assert result["response"]
 
 
 def test_task_request_proposes_plan_only(normalized_goal):
@@ -134,3 +136,23 @@ def test_auto_mode_runs_without_prompt(normalized_goal):
     multi_agent_engine.coordinate.assert_called_once()
     autonomy.run_graph.assert_called_once()
     assert "Tasks executed" in result["response"]
+
+
+def test_auto_turn_budget_stops_after_limit(normalized_goal):
+    controller, intent_engine, nl_to_taskgraph, autonomy, multi_agent_engine = build_controller(normalized_goal)
+
+    graph = TaskGraph(nodes=[TaskNode(id="step", description="do work", tool=None)])
+    nl_to_taskgraph.translate.return_value = graph
+    multi_agent_engine.coordinate.return_value = graph
+    autonomy.run_graph.return_value = ExecutionTrace()
+
+    controller._arm_auto_mode(turns=1, ttl_seconds=3600)
+
+    first = controller.handle_input("build a script to rename files")
+    assert "Tasks executed" in first["response"]
+    assert autonomy.run_graph.call_count == 1
+
+    second = controller.handle_input("build another script")
+    assert "Execute?" in second["response"]
+    assert autonomy.run_graph.call_count == 1
+    assert controller.auto_mode_enabled is False

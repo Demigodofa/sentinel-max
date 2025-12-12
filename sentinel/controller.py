@@ -19,6 +19,7 @@ from sentinel.planning.adaptive_planner import AdaptivePlanner
 from sentinel.policy.policy_engine import PolicyEngine
 from sentinel.reflection.reflection_engine import ReflectionEngine
 from sentinel.tools import FSDeleteTool, FSListTool, FSReadTool, FSWriteTool, SandboxExecTool, WebSearchTool
+from sentinel.tools.browser_agent import BrowserAgent
 from sentinel.tools.code_analyzer import CODE_ANALYZER_TOOL
 from sentinel.tools.internet_extractor import INTERNET_EXTRACTOR_TOOL
 from sentinel.tools.microservice_builder import MICROSERVICE_BUILDER_TOOL
@@ -122,6 +123,7 @@ class SentinelController:
         self.tool_registry.register(INTERNET_EXTRACTOR_TOOL)
         self.tool_registry.register(CODE_ANALYZER_TOOL)
         self.tool_registry.register(MICROSERVICE_BUILDER_TOOL)
+        self.tool_registry.register(BrowserAgent())
         generate_echo_tool(prefix="Echo: ", registry=self.tool_registry)
 
     def process_input(self, message: str) -> str:

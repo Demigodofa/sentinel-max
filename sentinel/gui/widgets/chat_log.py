@@ -55,17 +55,22 @@ class ChatLog(ttk.Frame):
         self.text.tag_configure("agent", spacing1=6, spacing3=10)
         self.text.tag_configure("meta", foreground=c["muted"], font=self.fonts["mono"])
 
-        # Make it read-only but still selectable
-        self.text.configure(state="disabled")
-
         # Clipboard bindings
         for seq in ("<Control-c>", "<Command-c>"):
             self.text.bind(seq, self._copy)
-        self.text.bind("<Control-a>", self._select_all)
+        for seq in ("<Control-a>", "<Command-a>"):
+            self.text.bind(seq, self._select_all)
+        for seq in ("<Control-v>", "<Command-v>"):
+            self.text.bind(seq, self._paste_blocked)
+        for seq in ("<Control-x>", "<Command-x>"):
+            self.text.bind(seq, self._cut_blocked)
         self.text.bind("<Button-3>", self._open_menu)  # right click
 
         self._menu = tk.Menu(self, tearoff=0)
         self._menu.add_command(label="Copy", command=self._copy_menu)
+        self._menu.add_command(label="Paste", command=self._paste_menu)
+        self._menu.add_command(label="Cut", command=self._cut_menu)
+        self._menu.add_separator()
         self._menu.add_command(label="Select All", command=self._select_all_menu)
 
     def append(self, who: str, message: str) -> None:
@@ -77,7 +82,7 @@ class ChatLog(ttk.Frame):
 
         self.text.configure(state="normal")
         self.text.insert("end", prefix + message.strip() + "\n", tag)
-        self.text.configure(state="disabled")
+        self.text.configure(state="normal")
         self.text.see("end")
 
     def _copy(self, event=None):  # type: ignore[override]
@@ -88,6 +93,19 @@ class ChatLog(ttk.Frame):
 
     def _copy_menu(self) -> None:
         self.text.event_generate("<<Copy>>")
+
+    def _cut_menu(self) -> None:
+        self.text.event_generate("<<Copy>>")
+
+    def _paste_menu(self) -> None:
+        # Output is read-only; paste falls back to copying clipboard text into selection without mutation.
+        try:
+            clip = self.clipboard_get()
+            if clip:
+                self.text.clipboard_clear()
+                self.text.clipboard_append(clip)
+        except Exception:
+            pass
 
     def _select_all(self, event=None):  # type: ignore[override]
         self.text.tag_add("sel", "1.0", "end-1c")
@@ -101,3 +119,9 @@ class ChatLog(ttk.Frame):
             self._menu.tk_popup(event.x_root, event.y_root)
         finally:
             self._menu.grab_release()
+
+    def _paste_blocked(self, event=None):  # type: ignore[override]
+        return "break"
+
+    def _cut_blocked(self, event=None):  # type: ignore[override]
+        return "break"

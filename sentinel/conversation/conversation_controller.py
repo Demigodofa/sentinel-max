@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import json
+import re
 import time
-from typing import Dict, Optional, TYPE_CHECKING, Iterable
+from typing import Dict, Optional, TYPE_CHECKING, Iterable, Tuple
 
 if TYPE_CHECKING:
     from sentinel.agent_core.autonomy import AutonomyLoop
@@ -59,7 +60,7 @@ class ConversationController:
         self.pending_plan: Optional[dict] = None
         self.pending_goal_text: Optional[str] = None
         # Autonomy guardrails (user-friendly defaults)
-        self.auto_budget_turns: int = 0
+        self.auto_budget_turns: Optional[int] = 0
         self.auto_deadline_epoch: float = 0.0
 
     def handle_input(self, text: str) -> Dict[str, object]:
@@ -69,7 +70,7 @@ class ConversationController:
         normalized_text = raw.lower()
 
         if self.auto_mode_enabled and self._auto_expired():
-            self.auto_mode_enabled = False
+            self._disable_auto_mode()
 
         # ------------------------------------------------------------
         # 1) Slash commands ALWAYS win (do not send to intent engine)
@@ -82,10 +83,13 @@ class ConversationController:
         if normalized_text.startswith("/tool"):
             return self._handle_direct_tool_call(text, session_context)
 
-        if self.pending_plan and normalized_text in {"y", "yes", "run", "execute"}:
+        if self.pending_plan and self._is_execution_confirmation(normalized_text):
+            turns, ttl = self._parse_auto_budget(normalized_text)
+            if turns is not None or ttl is not None:
+                self._arm_auto_mode(turns=turns, ttl_seconds=ttl or 3600)
             return self._execute_pending_plan(text, session_context)
 
-        if self.pending_plan and normalized_text in {"n", "no", "cancel", "stop"}:
+        if self.pending_plan and self._is_cancel(normalized_text):
             self.pending_plan = None
             self.pending_goal = None
             self.pending_goal_text = None
@@ -99,22 +103,15 @@ class ConversationController:
                 "dialog_context": session_context,
             }
 
-        if self.pending_goal and normalized_text in {
-            "y",
-            "yes",
-            "run",
-            "run it",
-            "execute",
-            "start",
-            "go",
-            "do it",
-            "continue",
-        }:
+        if self.pending_goal and self._is_execution_confirmation(normalized_text):
+            turns, ttl = self._parse_auto_budget(normalized_text)
+            if turns is not None or ttl is not None:
+                self._arm_auto_mode(turns=turns, ttl_seconds=ttl or 3600)
             goal_to_execute = self.pending_goal
             self.pending_goal = None
             return self._execute_with_goal(text, goal_to_execute, session_context)
 
-        if self.pending_goal and normalized_text in {"n", "no", "cancel", "stop"}:
+        if self.pending_goal and self._is_cancel(normalized_text):
             self.pending_goal = None
             response = self.dialog_manager.format_agent_response(
                 "Okay — cancelled. Tell me what to change."
@@ -249,22 +246,27 @@ class ConversationController:
     def _auto_expired(self) -> bool:
         if not self.auto_mode_enabled:
             return True
-        if self.auto_budget_turns <= 0:
+        if self.auto_budget_turns is not None and self.auto_budget_turns <= 0:
             return True
         if self.auto_deadline_epoch and time.time() > self.auto_deadline_epoch:
             return True
         return False
 
     def _consume_auto_budget(self) -> None:
-        if self.auto_budget_turns > 0:
+        if self.auto_budget_turns is not None:
             self.auto_budget_turns -= 1
         if self._auto_expired():
-            self.auto_mode_enabled = False
+            self._disable_auto_mode()
 
-    def _arm_auto_mode(self, turns: int = 10, ttl_seconds: int = 3600) -> None:
+    def _arm_auto_mode(self, turns: Optional[int] = 10, ttl_seconds: Optional[int] = 3600) -> None:
         self.auto_mode_enabled = True
         self.auto_budget_turns = turns
-        self.auto_deadline_epoch = time.time() + ttl_seconds
+        self.auto_deadline_epoch = time.time() + ttl_seconds if ttl_seconds else 0.0
+
+    def _disable_auto_mode(self) -> None:
+        self.auto_mode_enabled = False
+        self.auto_budget_turns = 0
+        self.auto_deadline_epoch = 0.0
 
     def _handle_slash_command(
         self, raw: str, session_context: Dict[str, object]
@@ -288,8 +290,10 @@ class ConversationController:
                 "  /help               show this help\n"
                 "  /tools              list registered tools\n"
                 "  /auto               execute the last proposed plan\n"
-                "  /auto on|off         toggle auto-execution mode\n"
-                "  /auto <task>         one-shot: plan+execute <task>\n"
+                "  /auto on|off        toggle auto-execution mode\n"
+                "  /auto <turns>       enable bounded autonomy for N turns (default 1h timer)\n"
+                "  /auto <duration>    enable bounded autonomy for a duration (e.g., 30m, 1h)\n"
+                "  /auto <task>        one-shot: plan+execute <task>\n"
                 "  /run                execute the last proposed plan\n"
             )
             response = self.dialog_manager.format_agent_response(msg)
@@ -355,19 +359,6 @@ class ConversationController:
                 "dialog_context": session_context,
             }
 
-        # /auto <task text>  (one-shot execute)
-        if lower.startswith("/auto "):
-            remainder = text[len("/auto ") :].strip()
-            if remainder:
-                normalized_goal = self.intent_engine.run(remainder)
-                self.pending_goal = None
-                self.pending_plan = None
-                self.pending_goal_text = None
-                self.auto_mode_enabled = False
-                self.auto_budget_turns = 0
-                self.auto_deadline_epoch = 0.0
-                return self._execute_with_goal(remainder, normalized_goal, session_context)
-
         if lower in {"/auto on", "/auto enable"}:
             self._arm_auto_mode()
             response = self.dialog_manager.format_agent_response(
@@ -383,12 +374,10 @@ class ConversationController:
             }
 
         if lower in {"/auto off", "/auto disable"}:
-            self.auto_mode_enabled = False
+            self._disable_auto_mode()
             self.pending_goal = None
             self.pending_plan = None
             self.pending_goal_text = None
-            self.auto_budget_turns = 0
-            self.auto_deadline_epoch = 0.0
             response = self.dialog_manager.format_agent_response(
                 "Auto mode disabled. I'll ask before executing plans."
             )
@@ -400,6 +389,34 @@ class ConversationController:
                 "trace": None,
                 "dialog_context": session_context,
             }
+
+        # /auto <task text>  (one-shot execute or bounded autonomy)
+        if lower.startswith("/auto "):
+            remainder = text[len("/auto ") :].strip()
+            turns, ttl = self._parse_auto_budget(remainder)
+            if turns is not None or ttl is not None:
+                ttl_seconds = ttl or 3600
+                self._arm_auto_mode(turns=turns, ttl_seconds=ttl_seconds)
+                budget_label = f"{turns} turns" if turns is not None else "time-bound"
+                deadline_label = f"{ttl_seconds} seconds"
+                response = self.dialog_manager.format_agent_response(
+                    f"Auto mode enabled ({budget_label}; stops after {deadline_label})."
+                )
+                self.dialog_manager.record_turn(text, response, context=session_context)
+                return {
+                    "response": response,
+                    "normalized_goal": None,
+                    "task_graph": None,
+                    "trace": None,
+                    "dialog_context": session_context,
+                }
+            if remainder and remainder not in {"on", "enable", "off", "disable"}:
+                normalized_goal = self.intent_engine.run(remainder)
+                self.pending_goal = None
+                self.pending_plan = None
+                self.pending_goal_text = None
+                self._disable_auto_mode()
+                return self._execute_with_goal(remainder, normalized_goal, session_context)
 
         if lower == "/auto":
             if self.pending_goal is not None:
@@ -438,6 +455,51 @@ class ConversationController:
             }
 
         return None
+
+    def _is_execution_confirmation(self, normalized_text: str) -> bool:
+        direct = {
+            "y",
+            "yes",
+            "run",
+            "execute",
+            "start",
+            "go",
+            "do it",
+        }
+        if normalized_text in direct:
+            return True
+        substrings = [
+            "run it",
+            "run the plan",
+            "execute the plan",
+            "continue",
+            "keep going",
+            "go ahead",
+            "please proceed",
+            "keep running",
+            "run this",
+        ]
+        return any(trigger in normalized_text for trigger in substrings)
+
+    def _is_cancel(self, normalized_text: str) -> bool:
+        return normalized_text in {"n", "no", "cancel", "stop"}
+
+    def _parse_auto_budget(self, text: str) -> Tuple[Optional[int], Optional[int]]:
+        lowered = text.lower().strip()
+        if not lowered:
+            return (None, None)
+        match_hours = re.search(r"(\d+)\s*(h|hr|hrs|hour|hours)", lowered)
+        if match_hours:
+            return (None, int(match_hours.group(1)) * 3600)
+        match_minutes = re.search(r"(\d+)\s*(m|min|mins|minute|minutes)", lowered)
+        if match_minutes:
+            return (None, int(match_minutes.group(1)) * 60)
+        match_seconds = re.search(r"(\d+)\s*(s|sec|secs|second|seconds)", lowered)
+        if match_seconds:
+            return (None, int(match_seconds.group(1)))
+        if lowered.isdigit():
+            return (int(lowered), 3600)
+        return (None, None)
 
     # ------------------------------------------------------------------
     # Internal helpers
