@@ -8,6 +8,10 @@ from bs4 import BeautifulSoup
 
 from sentinel.agent_core.base import Tool
 from sentinel.tools.tool_schema import ToolSchema
+from sentinel.logging.logger import get_logger
+
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -34,15 +38,24 @@ class WebSearchTool(Tool):
     def run(self, query: str, max_results: int = 5) -> Dict[str, Any]:
         url = "https://duckduckgo.com/html/"
         headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.post(url, data={"q": query}, headers=headers, timeout=30)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        results: List[Dict[str, str]] = []
-        for anchor in soup.select("a.result__a")[:max_results]:
-            href = anchor.get("href") or ""
-            title = anchor.get_text(" ", strip=True)
-            results.append({"title": title, "url": href})
-        return {"ok": True, "query": query, "results": results}
+        try:
+            response = requests.post(url, data={"q": query}, headers=headers, timeout=30)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+            results: List[Dict[str, str]] = []
+            for anchor in soup.select("a.result__a")[:max_results]:
+                href = anchor.get("href") or ""
+                title = anchor.get_text(" ", strip=True)
+                results.append({"title": title, "url": href})
+            return {"ok": True, "query": query, "results": results}
+        except requests.RequestException as exc:
+            logger.warning("Web search failed, returning simulated results: %s", exc)
+            fallback_count = max(1, min(max_results, 3))
+            simulated_results = [
+                {"title": f"Simulated result {idx + 1} for {query}", "url": f"https://example.invalid/{idx + 1}"}
+                for idx in range(fallback_count)
+            ]
+            return {"ok": False, "query": query, "results": simulated_results, "error": str(exc)}
 
 WEB_SEARCH_TOOL = WebSearchTool()
 
