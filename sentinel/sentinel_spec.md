@@ -230,5 +230,4 @@ AutonomyLoop → ProjectEngine → PolicyEngine → Planner → ExecutionControl
 - Plans must be cycle-free with resolved dependencies; depth is computed automatically when absent and compared against policy thresholds.
 - `ProjectMemory` enforces schema validation and atomic, versioned writes for goals, plans, dependency graphs, execution logs, and reflections.
 - `DialogManager` can emit composite reports combining overview, progress, and dependency diagnostics for human operators.
-=======
 

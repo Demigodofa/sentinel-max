@@ -42,6 +42,21 @@ Enterprise-grade autonomous agent framework with long-horizon governance, reflec
    python -m sentinel.main --mode cli
    ```
 
+### Applying patches on Windows/PowerShell
+
+If you receive a diff in chat, pasting it directly into PowerShell will raise errors because the shell attempts to execute each
+diff line as a command (for example, interpreting `---` and `+++` as operators). Instead, save the diff to a file and let `git`
+apply it:
+
+```powershell
+# Save the diff text to a file, then apply it
+Set-Content patch.diff "<paste the diff content here>"
+git apply patch.diff
+```
+
+If `git apply` reports problems, check that the repo files match the versions referenced in the diff (look at the `index` hash
+lines) or re-run `git status` to ensure you are on the correct branch with no local changes.
+
 ### Resolving merge conflicts after pulling
 
 If you pull upstream changes and see conflicts (for example in `sentinel/dialog/dialog_manager.py`), keep the version that includes the newer long-horizon reporting helpers rather than deleting sections. A safe resolution workflow:

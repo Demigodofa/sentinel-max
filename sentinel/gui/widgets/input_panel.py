@@ -53,7 +53,15 @@ class InputPanel(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=0)
         self.configure(style="InputPanel.TFrame")
-        self.entry.configure(background=colors["panel_bg"], foreground=colors["text"], insertbackground=colors["accent"])
+
+        # Base styles
+        self.entry.configure(background=colors["panel_bg"], foreground=colors["text"])
+
+        # Windows tkinter does not support -insertbackground on ttk.Entry
+        try:
+            self.entry.configure(insertbackground=colors["accent"])
+        except Exception:
+            pass
 
     def _handle_send(self, on_send: Callable[[str], None]) -> None:
         text = self.entry_var.get().strip()
