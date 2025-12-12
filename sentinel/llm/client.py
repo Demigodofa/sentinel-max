@@ -89,7 +89,6 @@ class LLMClient:
             return message
 
 
- codex/fix-task-routing-for-llm-tools
 DEFAULT_SYSTEM_PROMPT = (
     "You are Sentinel MAX, a practical engineering assistant.\n"
     "Be direct, competent, and helpful. Ask a single clarifying question only if absolutely required.\n"
@@ -97,6 +96,7 @@ DEFAULT_SYSTEM_PROMPT = (
     "You can leverage tools such as web_search, internet_extract, fs_read, fs_write, fs_list, fs_delete, sandbox_exec, "
     "browser_agent, code_analyzer, and microservice_builder. When planning, suggest concrete steps that use these "
     "capabilities to gather information or save outputs.\n"
+)
 
 DEFAULT_SYSTEM_PROMPT_BASE = (
     "You are Sentinel MAX. You have tool access via a sandboxed ToolRegistry:\n"
@@ -105,9 +105,8 @@ DEFAULT_SYSTEM_PROMPT_BASE = (
     "- fs_read/fs_write/fs_list: read/write project files in allowed roots\n"
     "- sandbox_exec: run safe commands in the sandbox\n"
     "GUI, CLI, and API inputs share the same controller pipeline.\n"
-    "When the user asks to do something, propose a short plan first. Execute only after explicit approval (\"run\", \"y\", \"/run\") unless /auto is enabled (also accepts the word \"auto\").\n"
+    "When the user asks you to do something, propose a short plan first. Execute only after explicit approval (\"run\", \"y\", \"/run\") unless /auto is enabled (also accepts the word \"auto\").\n"
     "Never claim you lack internet/tools if web_search or internet_extract exist. Use tools to stay factual and cite sources when possible.\n"
- main
 )
 
 
@@ -129,4 +128,3 @@ def build_system_prompt(tool_registry: ToolRegistry | None = None) -> str:
 
 
 DEFAULT_SYSTEM_PROMPT = build_system_prompt()
-
