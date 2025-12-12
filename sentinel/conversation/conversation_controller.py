@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Dict, Optional, TYPE_CHECKING, Iterable
 
 if TYPE_CHECKING:
     from sentinel.agent_core.autonomy import AutonomyLoop
@@ -217,10 +217,24 @@ class ConversationController:
                 "dialog_context": session_context,
             }
 
+        # Autonomy trigger should only "execute" if there is a pending plan,
+        # otherwise treat it as normal conversation to avoid random auto-runs.
         if intent == Intent.AUTONOMY_TRIGGER:
-            normalized_goal = self.intent_engine.run(text)
-            self.pending_goal = None
-            return self._execute_with_goal(text, normalized_goal, session_context)
+            if self.pending_goal:
+                goal_to_execute = self.pending_goal
+                self.pending_goal = None
+                return self._execute_with_goal(text, goal_to_execute, session_context)
+            if self.pending_plan:
+                return self._execute_pending_plan(text, session_context)
+            response = self.dialog_manager.respond_conversationally(text)
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
 
         response = self.dialog_manager.respond_conversationally(text)
         self.dialog_manager.record_turn(text, response, context=session_context)
@@ -260,7 +274,7 @@ class ConversationController:
         Supported:
           /help
           /tools
-          /auto            -> executes pending plan if present, otherwise enables auto mode
+          /auto            -> executes pending plan if present
           /auto on|off
           /auto <free text> -> one-shot: treat remainder as a task and execute immediately
           /cancel          -> drops pending plan
@@ -271,12 +285,12 @@ class ConversationController:
         if lower in {"/help", "/?"}:
             msg = (
                 "Commands:\n"
-                "  /tools  - list available tools\n"
-                "  /auto   - run the pending plan (or enable auto mode if none)\n"
-                "  /auto on|off\n"
-                "  /auto <task text> - run a task immediately\n"
-                "  /cancel - cancel the pending plan\n"
-                "You can also reply 'y'/'n' when I propose a plan."
+                "  /help               show this help\n"
+                "  /tools              list registered tools\n"
+                "  /auto               execute the last proposed plan\n"
+                "  /auto on|off         toggle auto-execution mode\n"
+                "  /auto <task>         one-shot: plan+execute <task>\n"
+                "  /run                execute the last proposed plan\n"
             )
             response = self.dialog_manager.format_agent_response(msg)
             self.dialog_manager.record_turn(text, response, context=session_context)
@@ -306,19 +320,32 @@ class ConversationController:
 
         if lower == "/tools":
             reg = getattr(self.planner, "tool_registry", None)
-            names = []
-            if reg is not None:
+
+            def _iter_tools() -> Iterable[object]:
+                if reg is None:
+                    return []
                 if hasattr(reg, "list_tools"):
                     try:
-                        names = list(reg.list_tools())
+                        tools = reg.list_tools()
                     except Exception:
-                        names = []
-                if not names:
-                    tools_dict = getattr(reg, "_tools", None) or getattr(reg, "tools", None)
-                    if isinstance(tools_dict, dict):
-                        names = sorted(tools_dict.keys())
-            msg = "Available tools:\n" + ("\n".join(f"  - {n}" for n in names) if names else "  (none found)")
-            response = self.dialog_manager.format_agent_response(msg)
+                        tools = []
+                    if isinstance(tools, dict):
+                        return tools.values()
+                    return tools
+                tools_dict = getattr(reg, "_tools", None) or getattr(reg, "tools", None)
+                if isinstance(tools_dict, dict):
+                    return tools_dict.values()
+                return []
+
+            lines = []
+            for tool in _iter_tools():
+                name = getattr(tool, "name", "<unnamed>")
+                desc = getattr(tool, "description", "")
+                lines.append(f"- {name}: {desc}".rstrip(": "))
+
+            response = self.dialog_manager.format_agent_response(
+                "Available tools:\n" + ("\n".join(lines) if lines else "(none)")
+            )
             self.dialog_manager.record_turn(text, response, context=session_context)
             return {
                 "response": response,
@@ -336,8 +363,9 @@ class ConversationController:
                 self.pending_goal = None
                 self.pending_plan = None
                 self.pending_goal_text = None
-                self._arm_auto_mode()
-                self._consume_auto_budget()
+                self.auto_mode_enabled = False
+                self.auto_budget_turns = 0
+                self.auto_deadline_epoch = 0.0
                 return self._execute_with_goal(remainder, normalized_goal, session_context)
 
         if lower in {"/auto on", "/auto enable"}:
@@ -377,14 +405,11 @@ class ConversationController:
             if self.pending_goal is not None:
                 goal_to_execute = self.pending_goal
                 self.pending_goal = None
-                self._consume_auto_budget()
                 return self._execute_with_goal(text, goal_to_execute, session_context)
             if self.pending_plan:
-                self._consume_auto_budget()
                 return self._execute_pending_plan(text, session_context)
-            self._arm_auto_mode()
             response = self.dialog_manager.format_agent_response(
-                "Auto mode enabled (10 actions, 1 hour). I'll execute approved plans without prompting."
+                "No pending plan to run. Ask for a task first, or use `/auto <task>`."
             )
             self.dialog_manager.record_turn(text, response, context=session_context)
             return {
