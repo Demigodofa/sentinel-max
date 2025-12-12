@@ -1,2 +1,8 @@
-# Tests (needed for the shipped test suite)
-pytest>=7.0
+# HTTP client for Ollama + optional remote providers
+requests>=2.31.0
+beautifulsoup4>=4.12.3
+
+# optional but recommended for dev/testing (covers shipped test suite)
+pytest>=8.0.0
+
+# (keep existing deps below)

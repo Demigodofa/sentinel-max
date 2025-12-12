@@ -17,12 +17,12 @@ from sentinel.memory.memory_manager import MemoryManager
 from sentinel.planning.adaptive_planner import AdaptivePlanner
 from sentinel.policy.policy_engine import PolicyEngine
 from sentinel.reflection.reflection_engine import ReflectionEngine
+from sentinel.tools import FSDeleteTool, FSListTool, FSReadTool, FSWriteTool, SandboxExecTool, WebSearchTool
 from sentinel.tools.code_analyzer import CODE_ANALYZER_TOOL
 from sentinel.tools.internet_extractor import INTERNET_EXTRACTOR_TOOL
 from sentinel.tools.microservice_builder import MICROSERVICE_BUILDER_TOOL
 from sentinel.tools.registry import DEFAULT_TOOL_REGISTRY
 from sentinel.tools.tool_generator import generate_echo_tool
-from sentinel.tools.web_search import WEB_SEARCH_TOOL
 from sentinel.simulation.sandbox import SimulationSandbox
 from sentinel.research.research_engine import AutonomousResearchEngine
 from sentinel.world.model import WorldModel
@@ -107,7 +107,16 @@ class SentinelController:
         self.hot_reloader = HotReloader()
 
     def _register_default_tools(self) -> None:
-        self.tool_registry.register(WEB_SEARCH_TOOL)
+        # Hard-sandboxed filesystem + exec + web search
+        self.tool_registry.register(FSListTool())
+        self.tool_registry.register(FSReadTool())
+        self.tool_registry.register(FSWriteTool())
+        self.tool_registry.register(FSDeleteTool())
+        self.tool_registry.register(SandboxExecTool())
+
+        # Ensure a real web search tool exists even if older registry constants exist.
+        # If a web_search tool is already registered, registry should skip/ignore duplicates.
+        self.tool_registry.register(WebSearchTool())
         self.tool_registry.register(INTERNET_EXTRACTOR_TOOL)
         self.tool_registry.register(CODE_ANALYZER_TOOL)
         self.tool_registry.register(MICROSERVICE_BUILDER_TOOL)
