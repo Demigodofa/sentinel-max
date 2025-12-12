@@ -52,10 +52,61 @@ class ConversationController:
             world_model=self.world_model,
             dialog_manager=self.dialog_manager,
         )
+        self.auto_mode_enabled: bool = False
+        self.pending_goal: Optional[NormalizedGoal] = None
 
     def handle_input(self, text: str) -> Dict[str, object]:
         logger.info("Conversation pipeline received: %s", text)
         session_context = self.dialog_manager.get_session_context()
+        normalized_text = text.strip().lower()
+
+        if normalized_text in {"/auto on", "/auto enable"}:
+            self.auto_mode_enabled = True
+            response = self.dialog_manager.format_agent_response(
+                "Auto mode enabled. I'll execute approved plans without prompting."
+            )
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        if normalized_text in {"/auto off", "/auto disable"}:
+            self.auto_mode_enabled = False
+            self.pending_goal = None
+            response = self.dialog_manager.format_agent_response(
+                "Auto mode disabled. I'll ask before executing plans."
+            )
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        if self.pending_goal and normalized_text in {"y", "yes"}:
+            goal_to_execute = self.pending_goal
+            self.pending_goal = None
+            return self._execute_with_goal(text, goal_to_execute, session_context)
+
+        if self.pending_goal and normalized_text in {"n", "no"}:
+            self.pending_goal = None
+            response = self.dialog_manager.format_agent_response(
+                "No problem. Tell me what to adjust before executing."
+            )
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
 
         intent = classify_intent(text)
 
@@ -75,13 +126,32 @@ class ConversationController:
             clarifications = tentative_goal.ambiguities
             if clarifications:
                 self.dialog_manager.register_questions(clarifications)
+                self.pending_goal = tentative_goal
+                response = self.dialog_manager.propose_plan(tentative_goal.as_goal_statement())
+                self.dialog_manager.record_turn(
+                    text,
+                    response,
+                    context=session_context,
+                    normalized_goal=tentative_goal,
+                    questions=clarifications,
+                )
+                return {
+                    "response": response,
+                    "normalized_goal": tentative_goal,
+                    "task_graph": None,
+                    "trace": None,
+                    "dialog_context": session_context,
+                }
+            if self.auto_mode_enabled:
+                self.pending_goal = None
+                return self._execute_with_goal(text, tentative_goal, session_context)
+            self.pending_goal = tentative_goal
             response = self.dialog_manager.propose_plan(tentative_goal.as_goal_statement())
             self.dialog_manager.record_turn(
                 text,
                 response,
                 context=session_context,
                 normalized_goal=tentative_goal,
-                questions=clarifications,
             )
             return {
                 "response": response,
@@ -93,43 +163,8 @@ class ConversationController:
 
         if intent == Intent.AUTONOMY_TRIGGER:
             normalized_goal = self.intent_engine.run(text)
-            self.dialog_manager.remember_goal(normalized_goal)
-            clarifications = normalized_goal.ambiguities
-            if clarifications:
-                self.dialog_manager.register_questions(clarifications)
-                response = self.dialog_manager.format_agent_response(
-                    "I need a precise target before executing.", clarifications=clarifications
-                )
-                self.dialog_manager.record_turn(
-                    text, response, context=session_context, normalized_goal=normalized_goal, questions=clarifications
-                )
-                return {
-                    "response": response,
-                    "normalized_goal": normalized_goal,
-                    "task_graph": None,
-                    "trace": None,
-                    "dialog_context": session_context,
-                }
-
-            task_graph = self.nl_to_taskgraph.translate(normalized_goal)
-            enriched_graph = self.multi_agent_engine.coordinate(task_graph)
-            trace = self._execute_graph(normalized_goal, enriched_graph)
-            response = self._final_response(trace, normalized_goal)
-            self.dialog_manager.record_turn(
-                text,
-                response,
-                context=session_context,
-                normalized_goal=normalized_goal,
-                task_graph=enriched_graph,
-                questions=self.dialog_manager.flush_questions(),
-            )
-            return {
-                "response": response,
-                "normalized_goal": normalized_goal,
-                "task_graph": enriched_graph,
-                "trace": trace,
-                "dialog_context": session_context,
-            }
+            self.pending_goal = None
+            return self._execute_with_goal(text, normalized_goal, session_context)
 
         response = self.dialog_manager.respond_conversationally(text)
         self.dialog_manager.record_turn(text, response, context=session_context)
@@ -144,6 +179,51 @@ class ConversationController:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+    def _execute_with_goal(
+        self, user_input: str, normalized_goal: NormalizedGoal, session_context: Dict[str, object]
+    ) -> Dict[str, object]:
+        self.dialog_manager.remember_goal(normalized_goal)
+        clarifications = normalized_goal.ambiguities
+        if clarifications:
+            self.dialog_manager.register_questions(clarifications)
+            response = self.dialog_manager.format_agent_response(
+                "I need a precise target before executing.", clarifications=clarifications
+            )
+            self.dialog_manager.record_turn(
+                user_input,
+                response,
+                context=session_context,
+                normalized_goal=normalized_goal,
+                questions=clarifications,
+            )
+            return {
+                "response": response,
+                "normalized_goal": normalized_goal,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        task_graph = self.nl_to_taskgraph.translate(normalized_goal)
+        enriched_graph = self.multi_agent_engine.coordinate(task_graph)
+        trace = self._execute_graph(normalized_goal, enriched_graph)
+        response = self._final_response(trace, normalized_goal)
+        self.dialog_manager.record_turn(
+            user_input,
+            response,
+            context=session_context,
+            normalized_goal=normalized_goal,
+            task_graph=enriched_graph,
+            questions=self.dialog_manager.flush_questions(),
+        )
+        return {
+            "response": response,
+            "normalized_goal": normalized_goal,
+            "task_graph": enriched_graph,
+            "trace": trace,
+            "dialog_context": session_context,
+        }
+
     def _execute_graph(self, normalized_goal: NormalizedGoal, task_graph) -> ExecutionTrace:
         goal_text = normalized_goal.as_goal_statement()
         self.memory.store_fact(

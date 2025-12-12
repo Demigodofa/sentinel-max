@@ -78,7 +78,26 @@ def test_task_request_proposes_plan_only(normalized_goal):
     nl_to_taskgraph.translate.assert_not_called()
     autonomy.run_graph.assert_not_called()
     multi_agent_engine.coordinate.assert_not_called()
-    assert "I can plan this" in result["response"]
+    assert controller.pending_goal is normalized_goal
+    assert "Execute? (y/n)" in result["response"]
+
+
+def test_plan_executes_after_user_approval(normalized_goal):
+    controller, intent_engine, nl_to_taskgraph, autonomy, multi_agent_engine = build_controller(normalized_goal)
+
+    graph = TaskGraph(nodes=[TaskNode(id="step", description="do work", tool=None)])
+    nl_to_taskgraph.translate.return_value = graph
+    multi_agent_engine.coordinate.return_value = graph
+    autonomy.run_graph.return_value = ExecutionTrace()
+
+    controller.handle_input("build a script to rename files")
+    result = controller.handle_input("y")
+
+    nl_to_taskgraph.translate.assert_called_once()
+    multi_agent_engine.coordinate.assert_called_once()
+    autonomy.run_graph.assert_called_once()
+    assert "Tasks executed" in result["response"]
+    assert controller.pending_goal is None
 
 
 def test_autonomy_trigger_executes(normalized_goal):
@@ -91,6 +110,25 @@ def test_autonomy_trigger_executes(normalized_goal):
 
     result = controller.handle_input("/auto build a script to rename files")
 
+    intent_engine.run.assert_called_once()
+    nl_to_taskgraph.translate.assert_called_once()
+    multi_agent_engine.coordinate.assert_called_once()
+    autonomy.run_graph.assert_called_once()
+    assert "Tasks executed" in result["response"]
+
+
+def test_auto_mode_runs_without_prompt(normalized_goal):
+    controller, intent_engine, nl_to_taskgraph, autonomy, multi_agent_engine = build_controller(normalized_goal)
+
+    graph = TaskGraph(nodes=[TaskNode(id="step", description="do work", tool=None)])
+    nl_to_taskgraph.translate.return_value = graph
+    multi_agent_engine.coordinate.return_value = graph
+    autonomy.run_graph.return_value = ExecutionTrace()
+
+    controller.handle_input("/auto on")
+    result = controller.handle_input("build a script to rename files")
+
+    assert controller.auto_mode_enabled is True
     intent_engine.run.assert_called_once()
     nl_to_taskgraph.translate.assert_called_once()
     multi_agent_engine.coordinate.assert_called_once()
