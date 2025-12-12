@@ -41,10 +41,10 @@ class SentinelApp:
     def _build_layout(self) -> None:
         colors = self.theme["colors"]
         self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_rowconfigure(1, weight=1)
+        self.root.grid_rowconfigure(2, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_columnconfigure(1, weight=1)
-        self.root.grid_rowconfigure(1, weight=1)
-        self.root.grid_rowconfigure(2, weight=0)
 
         self.chat_panel = ChatPanel(self.root, theme=self.theme)
         self.chat_panel.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=self.theme["spacing"]["pad"], pady=self.theme["spacing"]["pad"])

@@ -284,7 +284,9 @@ class IntentEngine:
         world_model: WorldModel,
         tool_registry: ToolRegistry,
         ambiguity_threshold: float = 0.5,
+
         plugins: Optional[Iterable[IntentEnginePlugin]] = None,
+
     ) -> None:
         self.classifier = IntentClassifier(world_model)
         self.extractor = GoalExtractor(memory, world_model, tool_registry)
@@ -303,6 +305,7 @@ class IntentEngine:
             if enriched:
                 parameters.update(enriched)
         ambiguities = self.scanner.scan(intent, parameters, text)
+        
         for plugin in self.plugins:
             plugin_ambiguities = plugin.adjust_ambiguities(text, intent, parameters, ambiguities)
             if plugin_ambiguities:
@@ -312,6 +315,9 @@ class IntentEngine:
             plugin_preferences = plugin.adjust_preferences(text, intent, parameters, preferences)
             if plugin_preferences:
                 preferences = self._merge_preferences(preferences, plugin_preferences)
+
+        preferences = ["Professional", "Helpful", "Conversational", "Concise"]
+
         context = {
             "world": metadata.get("resources", []),
             "tools": metadata.get("tools", {}),
