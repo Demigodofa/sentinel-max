@@ -57,19 +57,21 @@ class ConversationController:
         session_context = self.dialog_manager.get_session_context()
 
         if not self._should_activate_autonomy(text):
-            response = self.dialog_manager.format_agent_response(
-                "I'm ready when you want to start a specific task or project."
-            )
+            tentative_goal = self.intent_engine.run(text)
+            clarifications = tentative_goal.ambiguities
+            if clarifications:
+                self.dialog_manager.register_questions(clarifications)
+            response = self.dialog_manager.craft_frontstage_message(tentative_goal, clarifications=clarifications)
             self.dialog_manager.record_turn(
                 text,
                 response,
                 context=session_context,
-                normalized_goal=None,
-                questions=[],
+                normalized_goal=tentative_goal,
+                questions=clarifications,
             )
             return {
                 "response": response,
-                "normalized_goal": None,
+                "normalized_goal": tentative_goal,
                 "task_graph": None,
                 "trace": None,
                 "dialog_context": session_context,
