@@ -1,6 +1,7 @@
 """Conversational intent and goal normalization engine."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -52,9 +53,16 @@ class IntentClassifier:
         self.world_model = world_model
         self._domain_map: Dict[str, str] = {
             "coding": "coding",
+            "fix": "coding",
+            "bug": "coding",
+            "debug": "coding",
+            "refactor": "coding",
             "optimize": "optimization",
             "optimization": "optimization",
             "benchmark": "optimization",
+            "improve": "optimization",
+            "speed": "optimization",
+            "faster": "optimization",
             "deploy": "devops",
             "devops": "devops",
             "service": "multi_service",
@@ -94,6 +102,10 @@ class IntentClassifier:
             return "web_scraping"
         if "optimiz" in normalized:
             return "optimize_system"
+        if any(keyword in normalized for keyword in ["speed up", "faster", "improve performance"]):
+            return "performance_revision"
+        if any(keyword in normalized for keyword in ["fix", "bug", "issue", "debug"]):
+            return "general_goal"
         if "deploy" in normalized or "ci" in normalized:
             return "devops_pipeline"
         if "service" in normalized or "api" in normalized:
@@ -164,6 +176,9 @@ class ParameterResolver:
             parameters["latest_artifact"] = self._resolve_latest("code_artifact")
         if "tool" in normalized and "yesterday" in normalized:
             parameters["referenced_tool"] = self._resolve_latest("tools")
+        optimization_metric = self._infer_optimization_metric(normalized)
+        if optimization_metric:
+            parameters.setdefault("optimization_metric", optimization_metric)
         parameters["browser_actions"] = self._derive_browser_actions(normalized)
         return parameters
 
@@ -196,25 +211,41 @@ class ParameterResolver:
             actions.append("navigate")
         return actions
 
+    def _infer_optimization_metric(self, normalized: str) -> Optional[str]:
+        if any(phrase in normalized for phrase in ["latency", "response time", "faster", "speed"]):
+            return "latency"
+        if any(keyword in normalized for keyword in ["throughput", "qps", "rps", "traffic"]):
+            return "throughput"
+        if any(keyword in normalized for keyword in ["memory", "size", "footprint", "lighter", "smaller"]):
+            return "size"
+        if "cost" in normalized:
+            return "cost"
+        return None
+
 
 class AmbiguityScanner:
     """Detect ambiguous phrasing and request clarification when needed."""
 
-    def __init__(self, threshold: float = 0.62) -> None:
+    def __init__(self, threshold: float = 0.5) -> None:
         self.threshold = threshold
+        self.pronoun_pattern = re.compile(r"\b(it|that|this)\b")
 
     def scan(self, intent: IntentResult, parameters: Dict[str, object], text: str) -> List[str]:
         questions: List[str] = []
         normalized = text.lower()
         if intent.confidence < self.threshold:
             questions.append("Please clarify the exact outcome you want and priority constraints.")
-        if "it" in normalized or "that" in normalized:
+        if self.pronoun_pattern.search(normalized) and not self._has_grounded_target(parameters):
             questions.append("Which artifact or service does 'it/that' refer to?")
-        if "optimize" in normalized and "metric" not in normalized:
+        if "optimize" in normalized and "optimization_metric" not in parameters and "metric" not in normalized:
             questions.append("Which optimization metric should be used (latency, throughput, size)?")
         if "form" in normalized and not parameters.get("target_website"):
             questions.append("Which website hosts the form to fill?")
         return questions
+
+    def _has_grounded_target(self, parameters: Dict[str, object]) -> bool:
+        anchored_keys = {"target_website", "file_path", "endpoint", "latest_artifact", "referenced_tool"}
+        return any(parameters.get(key) for key in anchored_keys)
 
 
 class IntentEngine:
@@ -225,7 +256,7 @@ class IntentEngine:
         memory: MemoryManager,
         world_model: WorldModel,
         tool_registry: ToolRegistry,
-        ambiguity_threshold: float = 0.62,
+        ambiguity_threshold: float = 0.5,
     ) -> None:
         self.classifier = IntentClassifier(world_model)
         self.extractor = GoalExtractor(memory, world_model, tool_registry)
@@ -239,7 +270,7 @@ class IntentEngine:
         goal_type, metadata = self.extractor.extract(text, intent)
         parameters = self.resolver.resolve(text, metadata)
         ambiguities = self.scanner.scan(intent, parameters, text)
-        preferences = ["Professional", "Concise"]
+        preferences = ["Professional", "Helpful", "Conversational", "Concise"]
         context = {
             "world": metadata.get("resources", []),
             "tools": metadata.get("tools", {}),
