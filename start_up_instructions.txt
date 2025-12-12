@@ -1,0 +1,83 @@
+Sentinel MAX — startup and external SSD guide
+=============================================
+
+Goal
+----
+Run Sentinel MAX from an external SSD with data persisted in a sandboxed path, plus quick health/smoke checks and upgrade hygiene tips.
+
+1) Put the repo on the external SSD
+-----------------------------------
+- Mount the drive (examples)
+  - Windows: drive letter such as `E:`.
+  - macOS/Linux: mount point such as `/Volumes/External` or `/mnt/external`.
+- Clone or copy the repo onto the drive (pick one)
+  - Fresh clone: `git clone https://<your-repo-url>.git "<external-path>/sentinel-max"`
+  - Copy an existing working tree: `rsync -av --exclude '.venv' /path/to/sentinel-max/ <external-path>/sentinel-max/`
+- From now on, run commands from the repo root on that drive.
+
+2) Create an isolated Python environment
+----------------------------------------
+- Python 3.10+ recommended.
+- Create + activate a virtualenv on the SSD so dependencies live with the code:
+  - Windows (PowerShell):
+    - `python -m venv .venv`
+    - `./.venv/Scripts/Activate.ps1`
+  - macOS/Linux:
+    - `python -m venv .venv`
+    - `source .venv/bin/activate`
+- Install deps: `pip install -r sentinel/requirements.txt`
+
+3) Keep data on the SSD (storage sandbox)
+-----------------------------------------
+- Set where Sentinel stores memory and project artifacts (both default to repo-local if unset):
+  - `SENTINEL_STORAGE_DIR="<external-path>/sentinel-data/memory"`
+  - `SENTINEL_PROJECT_STORAGE="<external-path>/sentinel-data/projects"`
+- Make sure the target folders exist or will be created (the app will create them if missing) and are writable by your user.
+- These paths isolate serialized state from the codebase and keep the built-in execution sandbox (restricted Python builtins) intact.
+
+4) Launch commands
+------------------
+- CLI:   `python -m sentinel.main --mode cli`
+- GUI:   `python -m sentinel.main --mode gui`
+- API:   `python -m sentinel.main --mode server`
+
+5) Optional one-click Windows launcher (.bat)
+---------------------------------------------
+Save the following as `start_sentinel_gui.bat` next to the repo and double-click it after editing the paths:
+```
+@echo off
+set SENTINEL_STORAGE_DIR=E:\\sentinel-data\\memory
+set SENTINEL_PROJECT_STORAGE=E:\\sentinel-data\\projects
+call .\\.venv\\Scripts\\activate.bat
+python -m sentinel.main --mode gui
+```
+
+6) Quick health + smoke checks
+--------------------------------
+- Autonomy loop smoke test (fast):
+  - `python -m pytest sentinel/tests/test_autonomy_loop_subsystem.py`
+- Memory and ranking pipeline sanity:
+  - `python -m pytest sentinel/tests/test_memory_intelligence_subsystem.py`
+- Policy + reflection safety sanity (hallucination/loop guards):
+  - `python -m pytest sentinel/tests/test_policy_engine_subsystem.py sentinel/tests/test_reflection_engine_subsystem.py`
+- Long-horizon storage health readout (prints storage readability/writability and project counts):
+  - `python - <<"PY"`
+from sentinel.project.long_horizon_engine import LongHorizonProjectEngine
+print(LongHorizonProjectEngine().health_report())
+PY`
+- Full suite (slower): `python -m pytest sentinel/tests`
+
+7) Hallucination/loop prevention, benchmarks, and upgrade hygiene
+-----------------------------------------------------------------
+- Runtime guardrails already active: PolicyEngine (permissions/metadata/parallelism enforcement), Sandbox (restricted builtins), PatchAuditor + SelfModificationEngine (block risky edits like absolute paths, subprocess/rm), approval gating in ExecutionController, and ReflectionEngine for self-critiques.
+- Benchmark- and regression-friendly flows:
+  - The planner/worker stack already includes benchmark-oriented actions (see task graph actions like `benchmark current` and `run benchmarks`).
+  - To baseline changes, run representative pytest subsets above plus any domain-specific benchmark scripts you add under `sentinel/tests/`—the ToolRegistry supports injecting new tools for perf exercises without code changes elsewhere.
+- Upgrade hygiene and self-upgrades:
+  - Agent-originated code changes flow through PatchAuditor and SelfModificationEngine; rejected patches are dropped before touching disk, and HotReloader can refresh modules without restarting.
+  - Keep upgrades pruned by using feature branches, running smoke tests before merge, and periodically cleaning stale artifacts under `SENTINEL_PROJECT_STORAGE`.
+  - If you enable the agent to auto-apply its own patches, keep approval gating on in `ExecutionController` and review diffs to avoid drift.
+
+8) Will it still run from the SSD?
+----------------------------------
+Yes—as long as Python, git, and your virtualenv live on the SSD (or are reachable) and the two storage env vars point to readable/writable folders there. All entrypoints (`cli`, `gui`, `server`) honor the same controller wiring, and storage paths are now configurable via environment variables so runs stay portable across machines/drives.

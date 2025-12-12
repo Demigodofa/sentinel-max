@@ -11,8 +11,9 @@ from typing import Any, Dict, List
 class ProjectMemory:
     """Lightweight JSON-backed storage for project metadata and logs."""
 
-    def __init__(self, storage_path: str | Path = "projects") -> None:
-        self.storage_dir = Path(os.path.expanduser(str(storage_path)))
+    def __init__(self, storage_path: str | Path | None = None) -> None:
+        storage_root = storage_path or os.environ.get("SENTINEL_PROJECT_STORAGE") or "projects"
+        self.storage_dir = Path(os.path.expanduser(str(storage_root)))
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
     @property
