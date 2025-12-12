@@ -33,6 +33,7 @@ class ConversationController:
         memory: MemoryManager,
         world_model: WorldModel,
         simulation_sandbox: Optional[SimulationSandbox] = None,
+        multi_agent_engine: Optional[MultiAgentEngine] = None,
     ) -> None:
         self.dialog_manager = dialog_manager
         self.intent_engine = intent_engine
@@ -42,7 +43,7 @@ class ConversationController:
         self.memory = memory
         self.world_model = world_model
         self.simulation_sandbox = simulation_sandbox or SimulationSandbox(self.planner.tool_registry)
-        self.multi_agent_engine = MultiAgentEngine(
+        self.multi_agent_engine = multi_agent_engine or MultiAgentEngine(
             planner=self.planner,
             registry=self.planner.tool_registry,
             sandbox=self.simulation_sandbox,
@@ -69,19 +70,7 @@ class ConversationController:
                 "dialog_context": session_context,
             }
 
-        if intent == Intent.INFORMATION:
-            self.memory.store_fact("user_info", key=None, value=text, metadata={"source": "user"})
-            response = self.dialog_manager.acknowledge_information(text)
-            self.dialog_manager.record_turn(text, response, context=session_context)
-            return {
-                "response": response,
-                "normalized_goal": None,
-                "task_graph": None,
-                "trace": None,
-                "dialog_context": session_context,
-            }
-
-        if intent == Intent.TASK_REQUEST:
+        if intent == Intent.TASK:
             tentative_goal = self.intent_engine.run(text)
             clarifications = tentative_goal.ambiguities
             if clarifications:
