@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from sentinel.agent_core.autonomy import AutonomyLoop
-from sentinel.agent_core.hot_reloader import HotReloader
+from sentinel.agent_core.hot_reload import HotReloader
 from sentinel.agent_core.patch_auditor import PatchAuditor
 from sentinel.agent_core.reflection import Reflector
 from sentinel.agent_core.sandbox import Sandbox
@@ -24,6 +24,8 @@ from sentinel.tools.web_search import WEB_SEARCH_TOOL
 from sentinel.simulation.sandbox import SimulationSandbox
 from sentinel.research.research_engine import AutonomousResearchEngine
 from sentinel.world.model import WorldModel
+from sentinel.execution.approval_gate import ApprovalGate
+from sentinel.execution.execution_controller import ExecutionController
 
 logger = get_logger(__name__)
 
@@ -47,6 +49,7 @@ class SentinelController:
         )
 
         self.dialog_manager = DialogManager(self.memory, self.world_model)
+        self.approval_gate = ApprovalGate(self.dialog_manager)
         self.intent_engine = IntentEngine(self.memory, self.world_model, self.tool_registry)
         self.nl_to_taskgraph = NLToTaskGraph(self.tool_registry, self.policy_engine, self.world_model)
 
