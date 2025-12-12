@@ -8,8 +8,7 @@ from tkinter import ttk
 class ChatLog(ttk.Frame):
     """
     A scrollable text transcript that supports:
-      - selection + Ctrl+C copy
-      - right-click context menu (Copy / Select All)
+      - selection with right-click copy/select-all options
       - readable, high contrast colors
     """
 
