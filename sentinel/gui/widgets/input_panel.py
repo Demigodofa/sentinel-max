@@ -66,7 +66,26 @@ class InputPanel(ttk.Frame):
         self.columnconfigure(1, weight=0)
         self.configure(style="InputPanel.TFrame")
 
+
     def _create_entry(self, fonts: dict, colors: dict) -> tk.Entry:
+=======
+        # Base styles
+
+        entry_config = {
+            "background": colors["panel_bg"],
+            "foreground": colors["text"],
+        }
+
+        # Only set insertbackground if the widget actually supports it (ttk on Windows does not).
+        if "insertbackground" in self.entry.keys():
+            entry_config["insertbackground"] = colors["accent"]
+
+        self.entry.configure(**entry_config)
+=======
+        self.entry.configure(background=colors["panel_bg"], foreground=colors["text"])
+
+        # Windows tkinter does not support -insertbackground on ttk.Entry
+
         try:
             return ttk.Entry(
                 self,
