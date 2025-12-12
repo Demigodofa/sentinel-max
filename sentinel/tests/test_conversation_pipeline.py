@@ -1,6 +1,6 @@
 import unittest
 
-from sentinel.conversation.intent_engine import IntentEngine
+from sentinel.conversation.intent_engine import IntentEngine, PreferenceLearningPlugin
 from sentinel.conversation.nl_to_taskgraph import NLToTaskGraph
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.policy.policy_engine import PolicyEngine
@@ -25,6 +25,18 @@ class ConversationPipelineTest(unittest.TestCase):
         self.policy_engine = PolicyEngine(self.memory, allowed_permissions=permissions)
         self.intent_engine = IntentEngine(self.memory, self.world_model, self.registry)
         self.translator = NLToTaskGraph(self.registry, self.policy_engine, self.world_model)
+
+    def test_plugin_preference_learning(self) -> None:
+        plugin_engine = IntentEngine(
+            self.memory, self.world_model, self.registry, plugins=[PreferenceLearningPlugin(self.memory)]
+        )
+        first_goal = "Please be casual and friendly when you improve the tool"
+        normalized_first = plugin_engine.run(first_goal)
+        self.assertIn("Casual", normalized_first.preferences)
+
+        second_goal = "Help debug the deployment"
+        normalized_second = plugin_engine.run(second_goal)
+        self.assertIn("Casual", normalized_second.preferences)
 
     def test_simple_scraper_transcript(self) -> None:
         goal = "Make a scraper for this URL http://example.com"

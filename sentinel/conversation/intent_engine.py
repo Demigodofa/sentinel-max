@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Protocol, Tuple
 
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
@@ -124,6 +124,33 @@ class IntentClassifier:
         score += 0.1 if intent != "general_goal" else 0.0
         score += 0.1 if any(keyword in normalized for keyword in ["benchmark", "optimize", "microservice", "browser"]) else 0.0
         return min(round(score, 2), 0.98)
+
+
+class IntentEnginePlugin(Protocol):
+    """Extend the intent engine with optional tuning hooks."""
+
+    def enhance_parameters(
+        self, text: str, intent: IntentResult, parameters: Dict[str, object]
+    ) -> Dict[str, object]:
+        ...
+
+    def adjust_preferences(
+        self,
+        text: str,
+        intent: IntentResult,
+        parameters: Dict[str, object],
+        base_preferences: List[str],
+    ) -> List[str]:
+        ...
+
+    def adjust_ambiguities(
+        self,
+        text: str,
+        intent: IntentResult,
+        parameters: Dict[str, object],
+        ambiguities: List[str],
+    ) -> List[str]:
+        ...
 
 
 class GoalExtractor:
@@ -257,6 +284,9 @@ class IntentEngine:
         world_model: WorldModel,
         tool_registry: ToolRegistry,
         ambiguity_threshold: float = 0.5,
+
+        plugins: Optional[Iterable[IntentEnginePlugin]] = None,
+
     ) -> None:
         self.classifier = IntentClassifier(world_model)
         self.extractor = GoalExtractor(memory, world_model, tool_registry)
@@ -264,13 +294,30 @@ class IntentEngine:
         self.scanner = AmbiguityScanner(threshold=ambiguity_threshold)
         self.world_model = world_model
         self.memory = memory
+        self.plugins: List[IntentEnginePlugin] = list(plugins or [])
 
     def run(self, text: str) -> NormalizedGoal:
         intent = self.classifier.classify(text)
         goal_type, metadata = self.extractor.extract(text, intent)
         parameters = self.resolver.resolve(text, metadata)
+        for plugin in self.plugins:
+            enriched = plugin.enhance_parameters(text, intent, parameters)
+            if enriched:
+                parameters.update(enriched)
         ambiguities = self.scanner.scan(intent, parameters, text)
+        
+        for plugin in self.plugins:
+            plugin_ambiguities = plugin.adjust_ambiguities(text, intent, parameters, ambiguities)
+            if plugin_ambiguities:
+                ambiguities = plugin_ambiguities
         preferences = ["Professional", "Helpful", "Conversational", "Concise"]
+        for plugin in self.plugins:
+            plugin_preferences = plugin.adjust_preferences(text, intent, parameters, preferences)
+            if plugin_preferences:
+                preferences = self._merge_preferences(preferences, plugin_preferences)
+
+        preferences = ["Professional", "Helpful", "Conversational", "Concise"]
+
         context = {
             "world": metadata.get("resources", []),
             "tools": metadata.get("tools", {}),
@@ -294,3 +341,68 @@ class IntentEngine:
             metadata={"intent": intent.intent, "domain": intent.domain},
         )
         return normalized
+
+    def _merge_preferences(self, base: List[str], additions: List[str]) -> List[str]:
+        merged: List[str] = []
+        seen = set()
+        for pref in [*base, *additions]:
+            if pref not in seen:
+                merged.append(pref)
+                seen.add(pref)
+        return merged
+
+
+class PreferenceLearningPlugin(IntentEnginePlugin):
+    """Lightweight plugin that captures tone hints and reuses them in future turns."""
+
+    def __init__(self, memory: MemoryManager, namespace: str = "conversation.preferences") -> None:
+        self.memory = memory
+        self.namespace = namespace
+
+    def enhance_parameters(
+        self, text: str, intent: IntentResult, parameters: Dict[str, object]
+    ) -> Dict[str, object]:
+        return {}
+
+    def adjust_preferences(
+        self,
+        text: str,
+        intent: IntentResult,
+        parameters: Dict[str, object],
+        base_preferences: List[str],
+    ) -> List[str]:
+        normalized = text.lower()
+        learned: List[str] = []
+        record = self.memory.recall_recent(limit=1, namespace=self.namespace)
+        if record:
+            latest_preferences = record[0].get("value", {})
+            if isinstance(latest_preferences, dict):
+                learned = list(latest_preferences.get("preferences", []))
+        if any(keyword in normalized for keyword in ["casual", "friendly", "approachable", "warm"]):
+            learned.append("Casual")
+        merged = self._merge_preferences(base_preferences, learned)
+        self.memory.store_fact(
+            self.namespace,
+            key=None,
+            value={"preferences": merged, "intent": intent.intent, "text": text},
+            metadata={"domain": intent.domain},
+        )
+        return merged
+
+    def adjust_ambiguities(
+        self,
+        text: str,
+        intent: IntentResult,
+        parameters: Dict[str, object],
+        ambiguities: List[str],
+    ) -> List[str]:
+        return ambiguities
+
+    def _merge_preferences(self, base: List[str], additions: List[str]) -> List[str]:
+        merged: List[str] = []
+        seen = set()
+        for pref in [*base, *additions]:
+            if pref not in seen:
+                merged.append(pref)
+                seen.add(pref)
+        return merged
