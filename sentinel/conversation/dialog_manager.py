@@ -133,3 +133,19 @@ class DialogManager:
         self.memory.store_fact(
             "dialog_partials", key=None, value={"description": description}, metadata={"source": "dialog_manager"}
         )
+
+    # ------------------------------------------------------------------
+    # Safe fallbacks
+    # ------------------------------------------------------------------
+    def respond_conversationally(self, text: str) -> str:
+        return "I hear you. What would you like to work on?"
+
+    def acknowledge_information(self, text: str) -> str:
+        return "Got it — I've noted that."
+
+    def propose_plan(self, goal) -> str:
+        return (
+            "I can plan this:\n"
+            f"{goal}\n\n"
+            "Say `/auto` when you want me to execute autonomously."
+        )
