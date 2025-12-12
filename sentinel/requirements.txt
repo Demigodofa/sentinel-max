@@ -1,0 +1,2 @@
+# Tests (needed for the shipped test suite)
+pytest>=7.0
