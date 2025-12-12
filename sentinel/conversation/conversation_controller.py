@@ -61,69 +61,55 @@ class ConversationController:
     def handle_input(self, text: str) -> Dict[str, object]:
         logger.info("Conversation pipeline received: %s", text)
         session_context = self.dialog_manager.get_session_context()
-        normalized_text = text.strip().lower()
+        raw = text.strip()
+        normalized_text = raw.lower()
 
-        if normalized_text in {"/auto on", "/auto enable"}:
-            self.auto_mode_enabled = True
-            response = self.dialog_manager.format_agent_response(
-                "Auto mode enabled. I'll execute approved plans without prompting."
-            )
-            self.dialog_manager.record_turn(text, response, context=session_context)
-            return {
-                "response": response,
-                "normalized_goal": None,
-                "task_graph": None,
-                "trace": None,
-                "dialog_context": session_context,
-            }
-
-        if normalized_text in {"/auto off", "/auto disable"}:
-            self.auto_mode_enabled = False
-            self.pending_goal = None
-            self.pending_plan = None
-            self.pending_goal_text = None
-            response = self.dialog_manager.format_agent_response(
-                "Auto mode disabled. I'll ask before executing plans."
-            )
-            self.dialog_manager.record_turn(text, response, context=session_context)
-            return {
-                "response": response,
-                "normalized_goal": None,
-                "task_graph": None,
-                "trace": None,
-                "dialog_context": session_context,
-            }
-
-        if normalized_text == "/tools":
-            tool_names = sorted(self.planner.tool_registry.list_tools())
-            if not tool_names:
-                tool_list = "No tools registered."
-            else:
-                tool_list = "\n".join(f"- {name}" for name in tool_names)
-            response = self.dialog_manager.format_agent_response(tool_list)
-            self.dialog_manager.record_turn(text, response, context=session_context)
-            return {
-                "response": response,
-                "normalized_goal": None,
-                "task_graph": None,
-                "trace": None,
-                "dialog_context": session_context,
-            }
+        # ------------------------------------------------------------
+        # 1) Slash commands ALWAYS win (do not send to intent engine)
+        # ------------------------------------------------------------
+        if normalized_text.startswith("/"):
+            cmd_result = self._handle_slash_command(raw, session_context)
+            if cmd_result is not None:
+                return cmd_result
 
         if normalized_text.startswith("/tool"):
             return self._handle_direct_tool_call(text, session_context)
 
-        if normalized_text == "/auto" and self.pending_plan:
-            return self._execute_pending_plan(text, session_context)
-
         if self.pending_plan and normalized_text in {"y", "yes", "run", "execute"}:
             return self._execute_pending_plan(text, session_context)
 
-        if self.pending_plan and normalized_text in {"n", "no", "cancel"}:
+        if self.pending_plan and normalized_text in {"n", "no", "cancel", "stop"}:
             self.pending_plan = None
             self.pending_goal = None
             self.pending_goal_text = None
             response = self.dialog_manager.format_agent_response("Okay, canceled the pending plan.")
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        if self.pending_goal and normalized_text in {
+            "y",
+            "yes",
+            "run",
+            "execute",
+            "start",
+            "go",
+            "do it",
+        }:
+            goal_to_execute = self.pending_goal
+            self.pending_goal = None
+            return self._execute_with_goal(text, goal_to_execute, session_context)
+
+        if self.pending_goal and normalized_text in {"n", "no", "cancel", "stop"}:
+            self.pending_goal = None
+            response = self.dialog_manager.format_agent_response(
+                "No problem. Tell me what to adjust before executing."
+            )
             self.dialog_manager.record_turn(text, response, context=session_context)
             return {
                 "response": response,
@@ -141,6 +127,10 @@ class ConversationController:
             if self.auto_mode_enabled:
                 return self._execute_pending_plan(text, session_context)
             response = self.dialog_manager.propose_plan(self.pending_goal_text)
+            response = (
+                f"{response}\n\n"
+                "Reply **y** to run, **n** to revise, or use **/auto** to run immediately."
+            )
             self.dialog_manager.record_turn(
                 text,
                 response,
@@ -175,6 +165,10 @@ class ConversationController:
                 self.dialog_manager.register_questions(clarifications)
                 self.pending_goal = tentative_goal
                 response = self.dialog_manager.propose_plan(tentative_goal.as_goal_statement())
+                response = (
+                    f"{response}\n\n"
+                    "Reply **y** to run, **n** to revise, or use **/auto** to run immediately."
+                )
                 self.dialog_manager.record_turn(
                     text,
                     response,
@@ -194,6 +188,10 @@ class ConversationController:
                 return self._execute_with_goal(text, tentative_goal, session_context)
             self.pending_goal = tentative_goal
             response = self.dialog_manager.propose_plan(tentative_goal.as_goal_statement())
+            response = (
+                f"{response}\n\n"
+                "Reply **y** to run, **n** to revise, or use **/auto** to run immediately."
+            )
             self.dialog_manager.record_turn(
                 text,
                 response,
@@ -222,6 +220,145 @@ class ConversationController:
             "trace": None,
             "dialog_context": session_context,
         }
+
+    def _handle_slash_command(
+        self, raw: str, session_context: Dict[str, object]
+    ) -> Optional[Dict[str, object]]:
+        """
+        Slash commands are UI/ops controls (not "tasks").
+        Supported:
+          /help
+          /tools
+          /auto            -> executes pending plan if present, otherwise enables auto mode
+          /auto on|off
+          /auto <free text> -> one-shot: treat remainder as a task and execute immediately
+          /cancel          -> drops pending plan
+        """
+        text = raw.strip()
+        lower = text.lower()
+
+        if lower in {"/help", "/?"}:
+            msg = (
+                "Commands:\n"
+                "  /tools  - list available tools\n"
+                "  /auto   - run the pending plan (or enable auto mode if none)\n"
+                "  /auto on|off\n"
+                "  /auto <task text> - run a task immediately\n"
+                "  /cancel - cancel the pending plan\n"
+                "You can also reply 'y'/'n' when I propose a plan."
+            )
+            response = self.dialog_manager.format_agent_response(msg)
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        if lower == "/cancel":
+            self.pending_goal = None
+            self.pending_plan = None
+            self.pending_goal_text = None
+            response = self.dialog_manager.format_agent_response(
+                "Cancelled. Tell me what you want to do next."
+            )
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        if lower == "/tools":
+            reg = getattr(self.planner, "tool_registry", None)
+            names = []
+            if reg is not None:
+                if hasattr(reg, "list_tools"):
+                    try:
+                        names = list(reg.list_tools())
+                    except Exception:
+                        names = []
+                if not names:
+                    tools_dict = getattr(reg, "_tools", None) or getattr(reg, "tools", None)
+                    if isinstance(tools_dict, dict):
+                        names = sorted(tools_dict.keys())
+            msg = "Available tools:\n" + ("\n".join(f"  - {n}" for n in names) if names else "  (none found)")
+            response = self.dialog_manager.format_agent_response(msg)
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        # /auto <task text>  (one-shot execute)
+        if lower.startswith("/auto "):
+            remainder = text[len("/auto ") :].strip()
+            if remainder:
+                normalized_goal = self.intent_engine.run(remainder)
+                self.pending_goal = None
+                self.pending_plan = None
+                self.pending_goal_text = None
+                return self._execute_with_goal(remainder, normalized_goal, session_context)
+
+        if lower in {"/auto on", "/auto enable"}:
+            self.auto_mode_enabled = True
+            response = self.dialog_manager.format_agent_response(
+                "Auto mode enabled. I’ll execute approved plans automatically. Use /auto off to disable."
+            )
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        if lower in {"/auto off", "/auto disable"}:
+            self.auto_mode_enabled = False
+            self.pending_goal = None
+            self.pending_plan = None
+            self.pending_goal_text = None
+            response = self.dialog_manager.format_agent_response(
+                "Auto mode disabled. I'll ask before executing plans."
+            )
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        if lower == "/auto":
+            if self.pending_goal is not None:
+                goal_to_execute = self.pending_goal
+                self.pending_goal = None
+                return self._execute_with_goal(text, goal_to_execute, session_context)
+            if self.pending_plan:
+                return self._execute_pending_plan(text, session_context)
+            self.auto_mode_enabled = True
+            response = self.dialog_manager.format_agent_response(
+                "Auto mode enabled. I’ll execute approved plans automatically. Use /auto off to disable."
+            )
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        return None
 
     # ------------------------------------------------------------------
     # Internal helpers
