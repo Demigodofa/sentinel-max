@@ -4,6 +4,8 @@ from __future__ import annotations
 from collections import deque
 from typing import Deque, Dict, List, Optional
 
+from sentinel.conversation.intent_engine import NormalizedGoal
+
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.world.model import WorldModel
@@ -103,6 +105,18 @@ class DialogManager:
             statements.append("Clarifications needed: " + "; ".join(clarifications))
             self.pending_questions.extend(clarifications)
         return " ".join(statements)
+
+    def craft_frontstage_message(self, normalized_goal: NormalizedGoal, clarifications: Optional[List[str]] = None) -> str:
+        goal_statement = normalized_goal.as_goal_statement()
+        domain = normalized_goal.domain.replace("_", " ") if normalized_goal.domain else "general"
+        preference_view = ", ".join(normalized_goal.preferences) if normalized_goal.preferences else self.persona
+        header = f"I hear you're aiming for: {goal_statement}."
+        readiness = (
+            "I can brief the specialists and orchestrate the work once you give the go-ahead. "
+            "Say '/auto' or tell me to start when you're ready."
+        )
+        tone = f"I'll keep it {preference_view.lower()} while we plan within the {domain} space."
+        return self.format_agent_response(" ".join([header, readiness, tone]), clarifications=clarifications)
 
     def flush_questions(self) -> List[str]:
         pending = list(self.pending_questions)
