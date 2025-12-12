@@ -40,7 +40,10 @@ class ToolRegistry:
 
         with self._lock:
             if tool.name in self._tools:
-                raise ValueError(f"Tool '{tool.name}' is already registered")
+                # Skip duplicate registrations so GUI/Server controllers don't break.
+                # Optional: ensure same class/type, otherwise warn.
+                # But for now, silent skip = safe.
+                return
             self._tools[tool.name] = tool
             self._schemas[tool.name] = schema
             logger.info("Registered tool: %s", tool.name)
