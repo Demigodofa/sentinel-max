@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 from sentinel.logging.logger import get_logger
 from sentinel.llm.config import LLMConfig, load_llm_config
+from sentinel.tools.registry import DEFAULT_TOOL_REGISTRY, ToolRegistry
 
 logger = get_logger(__name__)
 
@@ -88,9 +89,34 @@ class LLMClient:
             return message
 
 
-DEFAULT_SYSTEM_PROMPT = (
-    "You are Sentinel MAX, a practical engineering assistant.\n"
-    "Be direct, competent, and helpful. Ask a single clarifying question only if absolutely required.\n"
-    "If the user asks you to perform actions requiring tools, propose a short plan and ask for execution approval.\n"
+DEFAULT_SYSTEM_PROMPT_BASE = (
+    "You are Sentinel MAX. You have tool access via a sandboxed ToolRegistry:\n"
+    "- web_search: search the internet\n"
+    "- internet_extract: fetch + extract content\n"
+    "- fs_read/fs_write/fs_list: read/write project files in allowed roots\n"
+    "- sandbox_exec: run safe commands in the sandbox\n"
+    "GUI, CLI, and API inputs share the same controller pipeline.\n"
+    "When the user asks to do something, propose a short plan first. Execute only after explicit approval (\"run\", \"y\", \"/run\") unless /auto is enabled (also accepts the word \"auto\").\n"
+    "Never claim you lack internet/tools if web_search or internet_extract exist. Use tools to stay factual and cite sources when possible.\n"
 )
+
+
+def _render_tool_list(tool_registry: ToolRegistry) -> str:
+    descriptions = tool_registry.describe_tools()
+    if not descriptions:
+        return ""
+
+    lines = ["\nRegistered tools available right now:"]
+    for name, metadata in sorted(descriptions.items()):
+        detail = metadata.get("description") or "no description provided"
+        lines.append(f"- {name}: {detail}")
+    return "\n".join(lines)
+
+
+def build_system_prompt(tool_registry: ToolRegistry | None = None) -> str:
+    registry = tool_registry or DEFAULT_TOOL_REGISTRY
+    return DEFAULT_SYSTEM_PROMPT_BASE + _render_tool_list(registry)
+
+
+DEFAULT_SYSTEM_PROMPT = build_system_prompt()
 
