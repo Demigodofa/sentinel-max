@@ -7,7 +7,6 @@ from typing import Dict, Optional
 
 from sentinel.agent_core.base import Tool
 from sentinel.logging.logger import get_logger
-from sentinel.tools.browser_agent import BrowserAgent
 from sentinel.tools.tool_schema import ToolSchema, ToolValidator
 
 logger = get_logger(__name__)
@@ -109,4 +108,3 @@ class ToolRegistry:
 
 # Singleton registry for convenience
 DEFAULT_TOOL_REGISTRY = ToolRegistry()
-DEFAULT_TOOL_REGISTRY.register(BrowserAgent())
