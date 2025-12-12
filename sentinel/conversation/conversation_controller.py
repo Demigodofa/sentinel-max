@@ -139,7 +139,7 @@ class ConversationController:
             response = self.dialog_manager.propose_plan(self.pending_goal_text)
             response = (
                 f"{response}\n\n"
-                "Reply **y** to run, **n** to revise, or use **/auto** to run immediately."
+                "Reply **y** (or /run) to run, **n** to revise, or use **/auto** to run immediately."
             )
             self.dialog_manager.record_turn(
                 text,
@@ -177,7 +177,7 @@ class ConversationController:
                 response = self.dialog_manager.propose_plan(tentative_goal.as_goal_statement())
                 response = (
                     f"{response}\n\n"
-                    "Reply **y** to run, **n** to revise, or use **/auto** to run immediately."
+                    "Reply **y** (or /run) to run, **n** to revise, or use **/auto** to run immediately."
                 )
                 self.dialog_manager.record_turn(
                     text,
@@ -201,7 +201,7 @@ class ConversationController:
             response = self.dialog_manager.propose_plan(tentative_goal.as_goal_statement())
             response = (
                 f"{response}\n\n"
-                "Reply **y** to run, **n** to revise, or use **/auto** to run immediately."
+                "Reply **y** (or /run) to run, **n** to revise, or use **/auto** to run immediately."
             )
             self.dialog_manager.record_turn(
                 text,
@@ -386,6 +386,23 @@ class ConversationController:
             response = self.dialog_manager.format_agent_response(
                 "Auto mode enabled (10 actions, 1 hour). I'll execute approved plans without prompting."
             )
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        if lower in {"/run", "/execute"}:
+            if self.pending_plan:
+                return self._execute_pending_plan(text, session_context)
+            if self.pending_goal is not None:
+                goal_to_execute = self.pending_goal
+                self.pending_goal = None
+                return self._execute_with_goal(text, goal_to_execute, session_context)
+            response = self.dialog_manager.format_agent_response("No pending plan to run.")
             self.dialog_manager.record_turn(text, response, context=session_context)
             return {
                 "response": response,
