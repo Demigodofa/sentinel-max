@@ -30,12 +30,14 @@ def load_theme() -> dict:
         "entry_insert": "#4EA1FF",
         "error": "#FF5A5A",
     }
+    colors.setdefault("muted_text", colors.get("muted", "#888888"))
 
     # Slightly larger font helps legibility on Windows scaling.
     fonts = {
         "body": ("Segoe UI", 11 if is_windows else 10),
         "mono": ("Consolas", 10) if is_windows else ("Menlo", 10),
     }
+    fonts.setdefault("heading", fonts.get("body", ("Segoe UI", 11, "bold")))
 
     return {
         "colors": colors,

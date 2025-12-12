@@ -36,12 +36,12 @@ class PlanPanel(ttk.Frame):
             "PlanStepTitle.TLabel",
             background=colors["panel_bg"],
             foreground=colors["text"],
-            font=self.theme["fonts"]["heading"],
+            font=(self.theme.get("fonts", {}).get("heading") or self.theme.get("fonts", {}).get("body") or ("Segoe UI", 11, "bold")),
         )
         style.configure(
             "PlanStepBody.TLabel",
             background=colors["panel_bg"],
-            foreground=colors["muted_text"],
+            foreground=colors.get("muted_text", colors.get("muted", "#888888")),
             font=self.theme["fonts"]["body"],
             wraplength=260,
             justify="left",

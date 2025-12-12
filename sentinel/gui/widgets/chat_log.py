@@ -1,6 +1,13 @@
 """Selectable/copyable chat transcript for Windows-friendly Tkinter."""
 from __future__ import annotations
 
+import sys
+IS_DARWIN = sys.platform == "darwin"
+
+def _platform_seqs(ctrl_seq: str, cmd_seq: str):
+    # On Windows/Linux, do NOT bind <Command-*> because it can behave like a stuck modifier.
+    return (ctrl_seq, cmd_seq) if IS_DARWIN else (ctrl_seq,)
+
 import tkinter as tk
 from tkinter import ttk
 
@@ -56,13 +63,13 @@ class ChatLog(ttk.Frame):
         self.text.tag_configure("meta", foreground=c["muted"], font=self.fonts["mono"])
 
         # Clipboard bindings
-        for seq in ("<Control-c>", "<Command-c>"):
+        for seq in _platform_seqs("<Control-c>", "<Command-c>"):
             self.text.bind(seq, self._copy)
-        for seq in ("<Control-a>", "<Command-a>"):
+        for seq in _platform_seqs("<Control-a>", "<Command-a>"):
             self.text.bind(seq, self._select_all)
-        for seq in ("<Control-v>", "<Command-v>"):
+        for seq in _platform_seqs("<Control-v>", "<Command-v>"):
             self.text.bind(seq, self._paste_blocked)
-        for seq in ("<Control-x>", "<Command-x>"):
+        for seq in _platform_seqs("<Control-x>", "<Command-x>"):
             self.text.bind(seq, self._cut_blocked)
         self.text.bind("<Button-3>", self._open_menu)  # right click
 

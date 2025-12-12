@@ -1,7 +1,15 @@
 """Input panel with entry box and send button."""
 from __future__ import annotations
 
+import sys
+IS_DARWIN = sys.platform == "darwin"
+
+def _platform_seqs(ctrl_seq: str, cmd_seq: str):
+    # On Windows/Linux, do NOT bind <Command-*> because it can behave like a stuck modifier.
+    return (ctrl_seq, cmd_seq) if IS_DARWIN else (ctrl_seq,)
+
 import tkinter as tk
+import os
 from tkinter import ttk
 from typing import Callable
 
@@ -62,13 +70,13 @@ class InputPanel(ttk.Frame):
         self.send_button.grid(row=0, column=1, sticky="e")
 
         self.entry.bind("<Return>", lambda _: self._handle_send(on_send))
-        for seq in ("<Control-a>", "<Command-a>"):
+        for seq in _platform_seqs("<Control-a>", "<Command-a>"):
             self.entry.bind(seq, self._select_all)
-        for seq in ("<Control-v>", "<Command-v>"):
+        for seq in _platform_seqs("<Control-v>", "<Command-v>"):
             self.entry.bind(seq, self._paste)
-        for seq in ("<Control-x>", "<Command-x>"):
+        for seq in _platform_seqs("<Control-x>", "<Command-x>"):
             self.entry.bind(seq, self._cut)
-        for seq in ("<Control-c>", "<Command-c>"):
+        for seq in _platform_seqs("<Control-c>", "<Command-c>"):
             self.entry.bind(seq, self._copy)
         self.entry.bind("<Button-3>", self._open_menu)
 
@@ -80,7 +88,7 @@ class InputPanel(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=0)
         self.configure(style="InputPanel.TFrame")
-        self.entry.focus_set()
+        self.after_idle(self.entry.focus_set)
 
     def _handle_send(self, on_send: Callable[[str], None]) -> None:
         text = self.entry_var.get().strip()
@@ -88,7 +96,7 @@ class InputPanel(ttk.Frame):
             return
         on_send(text)
         self.entry_var.set("")
-        self.entry.focus_set()
+        self.after_idle(self.entry.focus_set)
 
     def current_text(self) -> str:
         return self.entry_var.get().strip()
