@@ -162,14 +162,18 @@ class DialogManager:
                 ChatMessage(
                     "user",
                     "Write a short execution plan (3-6 steps) for this task. "
-                    "Assume tools may exist for web_search, internet_extract, code_analyzer. "
+                    "Assume tools may exist for web_search, internet_extract, fs_read, fs_write, fs_list, fs_delete, "
+                    "sandbox_exec, browser_agent, and code_analyzer. "
+                    "Prefer explicit web + file-save steps when the user wants information gathered and stored. "
                     "Be concise.\n\nTASK:\n" + str(goal),
                 ),
             ],
             max_tokens=300,
         )
-        if reply and reply.strip():
-            return self.format_agent_response(reply.strip())
+        if reply:
+            stripped = reply.strip()
+            if stripped and not stripped.lower().startswith(("llm backend is disabled", "llm request failed")):
+                return self.format_agent_response(stripped)
         return self.format_agent_response(
             "I can plan this:\n" f"{goal}\n\n" "Execute? (y/n) — or say `/auto` to run automatically."
         )

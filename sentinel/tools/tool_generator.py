@@ -111,6 +111,8 @@ def generate_echo_tool(prefix: str = "", registry: ToolRegistry | None = None) -
     tool = EchoTool()
     if registry is None:
         registry = DEFAULT_TOOL_REGISTRY
+    if registry.has_tool(tool.name):
+        return registry.get(tool.name)
     registry.register(tool)
     return tool
 
