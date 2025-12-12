@@ -17,6 +17,8 @@ DEFAULT_THEME: Dict[str, Any] = {
         "text": "#e5e7eb",
         "muted_text": "#9ca3af",
         "accent": "#22c55e",
+        "input_bg": "#0b1220",
+        "input_border": "#2563eb",
         "log_info": "#38bdf8",
         "log_warning": "#fbbf24",
         "log_error": "#f87171",
