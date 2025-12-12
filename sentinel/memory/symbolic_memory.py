@@ -47,7 +47,7 @@ class SymbolicMemory:
 
     def _persist(self) -> None:
         payload = {
-            "namespaces": self._namespaces,
+            "namespaces": self._json_safe(self._namespaces),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         temp_path = self.storage_path.with_suffix(".tmp")
@@ -67,6 +67,23 @@ class SymbolicMemory:
 
     def _ensure_namespace(self, namespace: str) -> Dict[str, Dict[str, Any]]:
         return self._namespaces.setdefault(namespace, {})
+
+    def _json_safe(self, value: Any) -> Any:
+        """Recursively convert values into JSON-serializable forms."""
+
+        if isinstance(value, dict):
+            return {k: self._json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [self._json_safe(v) for v in value]
+        if isinstance(value, set):
+            return [self._json_safe(v) for v in sorted(value, key=lambda x: str(x))]
+        if isinstance(value, datetime):
+            return value.isoformat()
+        try:
+            json.dumps(value)
+            return value
+        except TypeError:
+            return str(value)
 
     # ------------------------------------------------------------------
     # CRUD operations
@@ -89,8 +106,8 @@ class SymbolicMemory:
             stored = {
                 "key": key,
                 "namespace": namespace,
-                "value": value,
-                "metadata": metadata or {},
+                "value": self._json_safe(value),
+                "metadata": self._json_safe(metadata or {}),
                 "created_at": created_at,
                 "updated_at": self._timestamp(),
             }
@@ -119,8 +136,8 @@ class SymbolicMemory:
             stored = ns[key]
             stored.update(
                 {
-                    "value": value,
-                    "metadata": metadata or stored.get("metadata", {}),
+                    "value": self._json_safe(value),
+                    "metadata": self._json_safe(metadata or stored.get("metadata", {})),
                     "updated_at": self._timestamp(),
                 }
             )
@@ -157,6 +174,6 @@ class SymbolicMemory:
     def export_state(self) -> Dict[str, Any]:
         with self._lock:
             return {
-                "namespaces": {ns: {k: dict(v) for k, v in values.items()} for ns, values in self._namespaces.items()},
+                "namespaces": self._json_safe(self._namespaces),
                 "last_updated": self._timestamp(),
             }
