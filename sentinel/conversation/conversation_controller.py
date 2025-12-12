@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -57,12 +58,18 @@ class ConversationController:
         self.pending_goal: Optional[NormalizedGoal] = None
         self.pending_plan: Optional[dict] = None
         self.pending_goal_text: Optional[str] = None
+        # Autonomy guardrails (user-friendly defaults)
+        self.auto_budget_turns: int = 0
+        self.auto_deadline_epoch: float = 0.0
 
     def handle_input(self, text: str) -> Dict[str, object]:
         logger.info("Conversation pipeline received: %s", text)
         session_context = self.dialog_manager.get_session_context()
         raw = text.strip()
         normalized_text = raw.lower()
+
+        if self.auto_mode_enabled and self._auto_expired():
+            self.auto_mode_enabled = False
 
         # ------------------------------------------------------------
         # 1) Slash commands ALWAYS win (do not send to intent engine)
@@ -96,10 +103,12 @@ class ConversationController:
             "y",
             "yes",
             "run",
+            "run it",
             "execute",
             "start",
             "go",
             "do it",
+            "continue",
         }:
             goal_to_execute = self.pending_goal
             self.pending_goal = None
@@ -108,7 +117,7 @@ class ConversationController:
         if self.pending_goal and normalized_text in {"n", "no", "cancel", "stop"}:
             self.pending_goal = None
             response = self.dialog_manager.format_agent_response(
-                "No problem. Tell me what to adjust before executing."
+                "Okay — cancelled. Tell me what to change."
             )
             self.dialog_manager.record_turn(text, response, context=session_context)
             return {
@@ -124,7 +133,8 @@ class ConversationController:
             self.pending_goal = normalized_goal
             self.pending_goal_text = normalized_goal.as_goal_statement()
             self.pending_plan = {"normalized_goal": normalized_goal}
-            if self.auto_mode_enabled:
+            if self.auto_mode_enabled and not self._auto_expired():
+                self._consume_auto_budget()
                 return self._execute_pending_plan(text, session_context)
             response = self.dialog_manager.propose_plan(self.pending_goal_text)
             response = (
@@ -183,8 +193,9 @@ class ConversationController:
                     "trace": None,
                     "dialog_context": session_context,
                 }
-            if self.auto_mode_enabled:
+            if self.auto_mode_enabled and not self._auto_expired():
                 self.pending_goal = None
+                self._consume_auto_budget()
                 return self._execute_with_goal(text, tentative_goal, session_context)
             self.pending_goal = tentative_goal
             response = self.dialog_manager.propose_plan(tentative_goal.as_goal_statement())
@@ -220,6 +231,26 @@ class ConversationController:
             "trace": None,
             "dialog_context": session_context,
         }
+
+    def _auto_expired(self) -> bool:
+        if not self.auto_mode_enabled:
+            return True
+        if self.auto_budget_turns <= 0:
+            return True
+        if self.auto_deadline_epoch and time.time() > self.auto_deadline_epoch:
+            return True
+        return False
+
+    def _consume_auto_budget(self) -> None:
+        if self.auto_budget_turns > 0:
+            self.auto_budget_turns -= 1
+        if self._auto_expired():
+            self.auto_mode_enabled = False
+
+    def _arm_auto_mode(self, turns: int = 10, ttl_seconds: int = 3600) -> None:
+        self.auto_mode_enabled = True
+        self.auto_budget_turns = turns
+        self.auto_deadline_epoch = time.time() + ttl_seconds
 
     def _handle_slash_command(
         self, raw: str, session_context: Dict[str, object]
@@ -305,12 +336,14 @@ class ConversationController:
                 self.pending_goal = None
                 self.pending_plan = None
                 self.pending_goal_text = None
+                self._arm_auto_mode()
+                self._consume_auto_budget()
                 return self._execute_with_goal(remainder, normalized_goal, session_context)
 
         if lower in {"/auto on", "/auto enable"}:
-            self.auto_mode_enabled = True
+            self._arm_auto_mode()
             response = self.dialog_manager.format_agent_response(
-                "Auto mode enabled. I’ll execute approved plans automatically. Use /auto off to disable."
+                "Auto mode enabled (10 actions, 1 hour). I'll execute approved plans without prompting."
             )
             self.dialog_manager.record_turn(text, response, context=session_context)
             return {
@@ -326,6 +359,8 @@ class ConversationController:
             self.pending_goal = None
             self.pending_plan = None
             self.pending_goal_text = None
+            self.auto_budget_turns = 0
+            self.auto_deadline_epoch = 0.0
             response = self.dialog_manager.format_agent_response(
                 "Auto mode disabled. I'll ask before executing plans."
             )
@@ -342,12 +377,14 @@ class ConversationController:
             if self.pending_goal is not None:
                 goal_to_execute = self.pending_goal
                 self.pending_goal = None
+                self._consume_auto_budget()
                 return self._execute_with_goal(text, goal_to_execute, session_context)
             if self.pending_plan:
+                self._consume_auto_budget()
                 return self._execute_pending_plan(text, session_context)
-            self.auto_mode_enabled = True
+            self._arm_auto_mode()
             response = self.dialog_manager.format_agent_response(
-                "Auto mode enabled. I’ll execute approved plans automatically. Use /auto off to disable."
+                "Auto mode enabled (10 actions, 1 hour). I'll execute approved plans without prompting."
             )
             self.dialog_manager.record_turn(text, response, context=session_context)
             return {

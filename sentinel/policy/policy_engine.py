@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
+from sentinel.config.sandbox_config import get_sandbox_root
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.tools.registry import ToolRegistry
@@ -73,6 +75,15 @@ class PolicyEngine:
             "privilege escalation",
             "harm",
         ]
+
+    def assert_path_in_sandbox(self, path: str) -> None:
+        """
+        Blocks ANY file op outside SENTINEL_SANDBOX_ROOT.
+        """
+        root = get_sandbox_root().resolve()
+        target = Path(path).expanduser().resolve()
+        if root != target and root not in target.parents:
+            raise PermissionError(f"Path '{target}' is outside sandbox root '{root}'")
 
     # ------------------------------------------------------------------
     # Plan-time policies
