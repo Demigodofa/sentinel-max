@@ -53,7 +53,18 @@ class InputPanel(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=0)
         self.configure(style="InputPanel.TFrame")
-        self.entry.configure(background=colors["panel_bg"], foreground=colors["text"], insertbackground=colors["accent"])
+
+        # Base styles
+        entry_config = {
+            "background": colors["panel_bg"],
+            "foreground": colors["text"],
+        }
+
+        # Only set insertbackground if the widget actually supports it (ttk on Windows does not).
+        if "insertbackground" in self.entry.keys():
+            entry_config["insertbackground"] = colors["accent"]
+
+        self.entry.configure(**entry_config)
 
     def _handle_send(self, on_send: Callable[[str], None]) -> None:
         text = self.entry_var.get().strip()
