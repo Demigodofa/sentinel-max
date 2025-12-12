@@ -52,7 +52,7 @@ class MemoryManager:
         """Store a free-form text snippet in both symbolic and vector memories."""
         if not isinstance(text, str):
             try:
-                text = json.dumps(text, ensure_ascii=False)
+                text = json.dumps(text, ensure_ascii=False, indent=2)
             except Exception:
                 text = str(text)
         timestamp = datetime.now(timezone.utc).isoformat()

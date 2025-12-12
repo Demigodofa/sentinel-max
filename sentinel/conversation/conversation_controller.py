@@ -15,6 +15,7 @@ from sentinel.conversation.dialog_manager import DialogManager
 from sentinel.conversation.intent_engine import IntentEngine, NormalizedGoal
 from sentinel.conversation.nl_to_taskgraph import NLToTaskGraph
 from sentinel.agents.multi_agent_engine import MultiAgentEngine
+from sentinel.utils.autonomy_classifier import should_trigger_autonomy
 
 logger = get_logger(__name__)
 
@@ -54,6 +55,26 @@ class ConversationController:
     def handle_input(self, text: str) -> Dict[str, object]:
         logger.info("Conversation pipeline received: %s", text)
         session_context = self.dialog_manager.get_session_context()
+
+        if not self._should_activate_autonomy(text):
+            response = self.dialog_manager.format_agent_response(
+                "I'm ready when you want to start a specific task or project."
+            )
+            self.dialog_manager.record_turn(
+                text,
+                response,
+                context=session_context,
+                normalized_goal=None,
+                questions=[],
+            )
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
         normalized_goal = self.intent_engine.run(text)
         self.dialog_manager.remember_goal(normalized_goal)
         clarifications = normalized_goal.ambiguities
@@ -92,6 +113,15 @@ class ConversationController:
             "trace": trace,
             "dialog_context": session_context,
         }
+
+    def _should_activate_autonomy(self, text: str) -> bool:
+        trimmed = text.strip()
+        explicit = trimmed.startswith("/auto") or "start project" in trimmed.lower()
+        inferred = should_trigger_autonomy(trimmed)
+        activate = explicit or inferred
+        if len(trimmed.split()) <= 2 and not explicit:
+            return False
+        return activate
 
     # ------------------------------------------------------------------
     # Internal helpers
