@@ -1,6 +1,7 @@
 """Memory management for Sentinel MAX."""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,7 +32,8 @@ class MemoryManager:
         storage_dir: str | Path | None = None,
         embedding_model: Optional[str] = None,
     ) -> None:
-        base_dir = Path(storage_dir) if storage_dir else Path(__file__).resolve().parent
+        storage_root = storage_dir or os.environ.get("SENTINEL_STORAGE_DIR")
+        base_dir = Path(storage_root) if storage_root else Path(__file__).resolve().parent
         base_dir.mkdir(parents=True, exist_ok=True)
         self.symbolic = SymbolicMemory(base_dir / "symbolic_store.json")
         self.vector = VectorMemory(model_name=embedding_model)
