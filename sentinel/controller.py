@@ -11,6 +11,7 @@ from sentinel.agent_core.sandbox import Sandbox
 from sentinel.agent_core.self_mod import SelfModificationEngine
 from sentinel.agent_core.worker import Worker
 from sentinel.conversation import ConversationController, DialogManager, IntentEngine, NLToTaskGraph
+from sentinel.config.sandbox_config import ensure_sandbox_root_exists
 from sentinel.logging.logger import get_logger
 from sentinel.memory.intelligence import MemoryContextBuilder
 from sentinel.memory.memory_manager import MemoryManager
@@ -37,6 +38,7 @@ class SentinelController:
         self.memory = MemoryManager()
         self.world_model = WorldModel(self.memory)
         self.tool_registry = DEFAULT_TOOL_REGISTRY
+        ensure_sandbox_root_exists()
         self.sandbox = Sandbox()
         self.simulation_sandbox = SimulationSandbox(self.tool_registry)
         self.memory_context_builder = MemoryContextBuilder(self.memory)
