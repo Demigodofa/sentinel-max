@@ -5,7 +5,11 @@ from collections import deque
 from typing import Deque, Dict, List, Optional
 
 from sentinel.conversation.intent_engine import NormalizedGoal
-from sentinel.llm.client import ChatMessage, LLMClient, DEFAULT_SYSTEM_PROMPT
+from sentinel.llm.client import (
+    ChatMessage,
+    LLMClient,
+    build_system_prompt,
+)
 
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
@@ -141,7 +145,7 @@ class DialogManager:
     # ------------------------------------------------------------------
     def respond_conversationally(self, text: str) -> str:
         reply = self._llm.chat(
-            [ChatMessage("system", DEFAULT_SYSTEM_PROMPT), ChatMessage("user", text)],
+            [ChatMessage("system", build_system_prompt()), ChatMessage("user", text)],
             max_tokens=400,
         )
         if reply and reply.strip():
@@ -154,7 +158,7 @@ class DialogManager:
     def propose_plan(self, goal) -> str:
         reply = self._llm.chat(
             [
-                ChatMessage("system", DEFAULT_SYSTEM_PROMPT),
+                ChatMessage("system", build_system_prompt()),
                 ChatMessage(
                     "user",
                     "Write a short execution plan (3-6 steps) for this task. "

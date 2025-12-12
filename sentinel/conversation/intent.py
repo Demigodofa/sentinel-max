@@ -31,6 +31,7 @@ TASK_PREFIXES = (
     "run ",
 )
 
+ codex/fix-task-routing-for-llm-tools
 WEB_TASK_PATTERNS = (
     r"\b(search the web|web search|google|look up|lookup|find online)\b",
     r"\b(go online|go on the internet|search online|find on the internet|browse online)\b",
@@ -40,6 +41,27 @@ WEB_TASK_PATTERNS = (
 FILE_ACTION_HINTS = ("save", "write", "store", "record")
 WEB_REFERENCES = ("online", "internet", "web")
 
+
+ACTION_TRIGGERS = (
+    "make ",
+    "create ",
+    "build ",
+    "write ",
+    "generate ",
+    "fix ",
+    "debug ",
+    "install ",
+    "search ",
+    "look up",
+    "go online",
+    "download ",
+    "refactor ",
+    "run tests",
+    "open ",
+    "scrape",
+)
+
+main
 
 def classify_intent(text: str) -> Intent:
     if not text or not text.strip():
@@ -66,6 +88,9 @@ def classify_intent(text: str) -> Intent:
         return Intent.AUTONOMY_TRIGGER
 
     if lowered.startswith(TASK_PREFIXES):
+        return Intent.TASK
+
+    if any(trigger in lowered for trigger in ACTION_TRIGGERS):
         return Intent.TASK
 
     return Intent.CONVERSATION
