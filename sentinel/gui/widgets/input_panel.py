@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import TclError, ttk
+from tkinter import ttk, TclError
+
+# Windows ttk Entry does NOT support background/insert colors normally,
+# so we implement a safe fallback and enforce dark-mode readability.
 from typing import Callable
 
 from sentinel.gui.theme import load_theme
@@ -32,15 +35,20 @@ class InputPanel(ttk.Frame):
             foreground=colors["panel_bg"],
             padding=self.theme["spacing"]["pad_small"],
         )
+        # ttk.Entry style — only applies on macOS/Linux reliably.
+        # Windows will ignore unsupported options, but fallback handles it.
         style.configure(
             "InputPanel.TEntry",
             foreground=colors["text"],
-            fieldbackground=colors["input_bg"],
-            background=colors["input_bg"],
-            insertcolor=colors["accent"],
-            bordercolor=colors["input_border"],
-            relief="flat",
-            padding=self.theme["spacing"]["pad_small"],
+            fieldbackground=colors["panel_bg"],
+            borderwidth=0,
+        )
+
+        # Ensure focus highlight does not go white on Windows
+        style.map(
+            "InputPanel.TEntry",
+            foreground=[["active", colors["text"]]],
+            fieldbackground=[["active", colors["panel_bg"]]],
         )
 
     def _build_widgets(self, on_send: Callable[[str], None]) -> None:
@@ -48,11 +56,13 @@ class InputPanel(ttk.Frame):
         fonts = self.theme["fonts"]
         self.entry_var = tk.StringVar()
 
-        # Prefer ttk.Entry so native themes still work; fallback to tk.Entry if unsupported
-        self.entry = self._create_entry(fonts, colors)
+        # Create a robust entry widget:
+        # 1. Try ttk.Entry with dark theme
+        # 2. If styling fails (Windows), fallback to tk.Entry with explicit colors
+        self.entry = self._create_entry(colors, fonts)
         self.entry.grid(row=0, column=0, sticky="nsew", padx=(0, self.theme["spacing"]["pad_small"]))
 
-        # Clipboard shortcuts for common platforms
+        # Clipboard bindings (Windows/Linux/Mac)
         self._bind_clipboard_shortcuts()
 
         self.send_button = ttk.Button(
@@ -70,27 +80,36 @@ class InputPanel(ttk.Frame):
         self.configure(style="InputPanel.TFrame")
 
 
-    def _create_entry(self, fonts: dict, colors: dict) -> tk.Entry:
+    def _create_entry(self, colors: dict, fonts: dict):
+        """Creates a ttk.Entry with fallback to tk.Entry on Windows."""
         try:
-            return ttk.Entry(
+            # Try themed ttk.Entry
+            widget = ttk.Entry(
                 self,
                 textvariable=self.entry_var,
                 font=fonts["body"],
                 style="InputPanel.TEntry",
             )
-        except TclError:
+
+            # If ttk supports insertbackground, set it
+            try:
+                widget.configure(insertbackground=colors["accent"])
+            except TclError:
+                pass
+
+            return widget
+
+        except Exception:
+            # Fallback: standard tk.Entry with explicit styling
             return tk.Entry(
                 self,
                 textvariable=self.entry_var,
                 font=fonts["body"],
-                bg=colors["input_bg"],
+                bg=colors["panel_bg"],
                 fg=colors["text"],
                 insertbackground=colors["accent"],
                 relief="flat",
-                highlightthickness=1,
-                highlightcolor=colors["input_border"],
-                highlightbackground=colors["input_border"],
-                borderwidth=self.theme["border"]["width"],
+                highlightthickness=0,
             )
 
     def _handle_send(self, on_send: Callable[[str], None]) -> None:
@@ -101,43 +120,28 @@ class InputPanel(ttk.Frame):
         self.entry_var.set("")
         self.entry.focus_set()
 
-    def _bind_clipboard_shortcuts(self) -> None:
-        for sequence in ("<Control-c>", "<Command-c>"):
-            self.entry.bind(sequence, self._copy)
-        for sequence in ("<Control-v>", "<Command-v>"):
-            self.entry.bind(sequence, self._paste)
-        for sequence in ("<Control-x>", "<Command-x>"):
-            self.entry.bind(sequence, self._cut)
+    def _bind_clipboard_shortcuts(self):
+        """Universal copy/paste bindings for Windows, macOS, Linux."""
+        # Copy
+        self.entry.bind("<Control-c>", self._copy)
+        self.entry.bind("<Control-C>", self._copy)
+        self.entry.bind("<Command-c>", self._copy)
 
-        # Right-click context menu for mouse-driven clipboard interactions
-        menu = tk.Menu(self, tearoff=0)
-        menu.add_command(label="Cut", command=lambda: self._cut())
-        menu.add_command(label="Copy", command=lambda: self._copy())
-        menu.add_command(label="Paste", command=lambda: self._paste())
+        # Paste
+        self.entry.bind("<Control-v>", self._paste)
+        self.entry.bind("<Control-V>", self._paste)
+        self.entry.bind("<Command-v>", self._paste)
 
-        def show_menu(event: tk.Event) -> str:
-            menu.tk_popup(event.x_root, event.y_root)
-            return "break"
-
-        self.entry.bind("<Button-3>", show_menu)
-
-    def _copy(self, event=None):  # type: ignore[override]
+    def _copy(self, event=None):
         try:
             self.entry.event_generate("<<Copy>>")
         except TclError:
             return "break"
         return "break"
 
-    def _paste(self, event=None):  # type: ignore[override]
+    def _paste(self, event=None):
         try:
             self.entry.event_generate("<<Paste>>")
-        except TclError:
-            return "break"
-        return "break"
-
-    def _cut(self, event=None):  # type: ignore[override]
-        try:
-            self.entry.event_generate("<<Cut>>")
         except TclError:
             return "break"
         return "break"
