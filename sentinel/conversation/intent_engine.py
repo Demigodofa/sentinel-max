@@ -67,8 +67,11 @@ class IntentClassifier:
             "devops": "devops",
             "service": "multi_service",
             "microservice": "multi_service",
+            "browse": "web_interaction",
+            "search": "web_interaction",
             "web": "web_interaction",
             "browser": "web_interaction",
+            "site": "web_interaction",
             "automate": "automation",
             "automation": "automation",
             "research": "research",
@@ -88,6 +91,10 @@ class IntentClassifier:
 
     def _predict_domain(self, normalized: str) -> str:
         for keyword, domain in self._domain_map.items():
+            if keyword in {"browse", "search", "web", "browser", "site"}:
+                if re.search(rf"\\b{re.escape(keyword)}\\b", normalized):
+                    return domain
+                continue
             if keyword in normalized:
                 return domain
         domain_profile = self.world_model.get_domain(normalized)
@@ -266,6 +273,8 @@ class AmbiguityScanner:
             questions.append("Which artifact or service does 'it/that' refer to?")
         if "optimize" in normalized and "optimization_metric" not in parameters and "metric" not in normalized:
             questions.append("Which optimization metric should be used (latency, throughput, size)?")
+        if intent.domain == "web_interaction" and not parameters.get("target_website"):
+            questions.append("Which site or URL should I browse?")
         if "form" in normalized and not parameters.get("target_website"):
             questions.append("Which website hosts the form to fill?")
         return questions
@@ -305,7 +314,7 @@ class IntentEngine:
             if enriched:
                 parameters.update(enriched)
         ambiguities = self.scanner.scan(intent, parameters, text)
-        
+
         for plugin in self.plugins:
             plugin_ambiguities = plugin.adjust_ambiguities(text, intent, parameters, ambiguities)
             if plugin_ambiguities:
@@ -315,8 +324,6 @@ class IntentEngine:
             plugin_preferences = plugin.adjust_preferences(text, intent, parameters, preferences)
             if plugin_preferences:
                 preferences = self._merge_preferences(preferences, plugin_preferences)
-
-        preferences = ["Professional", "Helpful", "Conversational", "Concise"]
 
         context = {
             "world": metadata.get("resources", []),

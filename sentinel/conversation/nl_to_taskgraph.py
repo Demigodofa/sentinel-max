@@ -46,14 +46,18 @@ class NLToTaskGraph:
         domain = normalized_goal.domain
         goal_type = normalized_goal.type
         subgoals: List[Dict[str, object]] = []
-        if goal_type == "web_scraping" or domain == "web_interaction":
+        if goal_type == "web_scraping" or domain == "web_interaction" or normalized_goal.parameters.get("target_website"):
             subgoals.extend(
                 [
                     {"name": "analyze_target", "action": "inspect target", "parallelizable": True},
-                    {"name": "collect_content", "action": "extract data", "parallelizable": False},
+                    {"name": "open_site", "action": "open target site", "parallelizable": False},
+                    {"name": "collect_content", "action": "collect page content", "parallelizable": False},
                     {"name": "summarize_results", "action": "summarize", "parallelizable": True},
                 ]
             )
+            browser_actions: List[str] = normalized_goal.parameters.get("browser_actions", [])
+            if "authenticate" in browser_actions:
+                subgoals.insert(2, {"name": "authenticate", "action": "perform login", "parallelizable": False})
         elif goal_type == "build_microservice" or domain == "multi_service":
             subgoals.extend(
                 [
@@ -124,6 +128,12 @@ class NLToTaskGraph:
 
     def _select_tool(self, normalized_goal: NormalizedGoal, subgoal: Dict[str, object]) -> Tuple[Optional[str], Dict[str, object], Optional[str]]:
         goal_text = normalized_goal.raw_text or normalized_goal.as_goal_statement()
+        if "open target site" in str(subgoal["action"]) and self.tool_registry.has_tool("browser_agent"):
+            url = normalized_goal.parameters.get("target_website", goal_text)
+            return "browser_agent", {"mode": "headless", "action": "goto", "url": url}, "loaded_page"
+        if "collect page content" in str(subgoal["action"]) and self.tool_registry.has_tool("browser_agent"):
+            script = "return document.body ? document.body.innerText.slice(0, 4000) : '';"
+            return "browser_agent", {"mode": "headless", "action": "run_js", "script": script}, "page_content"
         if "extract" in str(subgoal["action"]) and self.tool_registry.has_tool("internet_extract"):
             return "internet_extract", {"url": normalized_goal.parameters.get("target_website", goal_text)}, "extracted_content"
         if "design api" in str(subgoal["action"]) and self.tool_registry.has_tool("microservice_builder"):

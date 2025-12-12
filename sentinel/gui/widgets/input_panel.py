@@ -43,9 +43,10 @@ class InputPanel(ttk.Frame):
         style.configure(
             "InputPanel.TEntry",
             foreground=colors["text"],
-            fieldbackground=colors["panel_bg"],
+            fieldbackground=colors["input_bg"],
             insertcolor=colors["accent"],
-            borderwidth=1
+            borderwidth=1,
+            padding=self.theme["spacing"]["pad_small"],
         )
 
     # ------------------------------------------------------------
@@ -71,7 +72,7 @@ class InputPanel(ttk.Frame):
                 self,
                 textvariable=self.entry_var,
                 font=fonts["body"],
-                bg=colors["panel_bg"],
+                bg=colors["input_bg"],
                 fg=colors["text"],
                 insertbackground=colors["accent"],
                 relief="solid",
@@ -85,7 +86,8 @@ class InputPanel(ttk.Frame):
         try:
             self.entry.configure(
                 foreground=colors["text"],
-                background=colors["panel_bg"]
+                background=colors["input_bg"],
+                insertbackground=colors["accent"],
             )
         except TclError:
             pass
@@ -135,11 +137,38 @@ class InputPanel(ttk.Frame):
             self.entry.bind(key, lambda e, ev=event: self._run_clipboard(ev))
 
     def _run_clipboard(self, event_name: str):
+        if event_name == "<<Paste>>":
+            try:
+                self.entry.event_generate(event_name)
+                return "break"
+            except TclError:
+                self._fallback_paste()
+                return "break"
+
         try:
             self.entry.event_generate(event_name)
         except TclError:
-            pass
+            return "break"
         return "break"
+
+    def _fallback_paste(self) -> None:
+        """Platform-safe paste handler when virtual event fails (Windows)."""
+
+        try:
+            clipboard_text = self.entry.clipboard_get()
+        except TclError:
+            return
+
+        if self.entry.selection_present():
+            start = self.entry.index("sel.first")
+            end = self.entry.index("sel.last")
+            self.entry.delete(start, end)
+            self.entry.insert(start, clipboard_text)
+        else:
+            cursor_index = self.entry.index(tk.INSERT)
+            self.entry.insert(cursor_index, clipboard_text)
+
+        self.entry_var.set(self.entry.get())
 
     def current_text(self) -> str:
         return self.entry_var.get().strip()
