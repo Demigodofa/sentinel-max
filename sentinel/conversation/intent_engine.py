@@ -1,8 +1,9 @@
 """Conversational intent and goal normalization engine."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Protocol, Tuple
 
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
@@ -52,9 +53,16 @@ class IntentClassifier:
         self.world_model = world_model
         self._domain_map: Dict[str, str] = {
             "coding": "coding",
+            "fix": "coding",
+            "bug": "coding",
+            "debug": "coding",
+            "refactor": "coding",
             "optimize": "optimization",
             "optimization": "optimization",
             "benchmark": "optimization",
+            "improve": "optimization",
+            "speed": "optimization",
+            "faster": "optimization",
             "deploy": "devops",
             "devops": "devops",
             "service": "multi_service",
@@ -94,6 +102,10 @@ class IntentClassifier:
             return "web_scraping"
         if "optimiz" in normalized:
             return "optimize_system"
+        if any(keyword in normalized for keyword in ["speed up", "faster", "improve performance"]):
+            return "performance_revision"
+        if any(keyword in normalized for keyword in ["fix", "bug", "issue", "debug"]):
+            return "general_goal"
         if "deploy" in normalized or "ci" in normalized:
             return "devops_pipeline"
         if "service" in normalized or "api" in normalized:
@@ -112,6 +124,33 @@ class IntentClassifier:
         score += 0.1 if intent != "general_goal" else 0.0
         score += 0.1 if any(keyword in normalized for keyword in ["benchmark", "optimize", "microservice", "browser"]) else 0.0
         return min(round(score, 2), 0.98)
+
+
+class IntentEnginePlugin(Protocol):
+    """Extend the intent engine with optional tuning hooks."""
+
+    def enhance_parameters(
+        self, text: str, intent: IntentResult, parameters: Dict[str, object]
+    ) -> Dict[str, object]:
+        ...
+
+    def adjust_preferences(
+        self,
+        text: str,
+        intent: IntentResult,
+        parameters: Dict[str, object],
+        base_preferences: List[str],
+    ) -> List[str]:
+        ...
+
+    def adjust_ambiguities(
+        self,
+        text: str,
+        intent: IntentResult,
+        parameters: Dict[str, object],
+        ambiguities: List[str],
+    ) -> List[str]:
+        ...
 
 
 class GoalExtractor:
@@ -164,6 +203,9 @@ class ParameterResolver:
             parameters["latest_artifact"] = self._resolve_latest("code_artifact")
         if "tool" in normalized and "yesterday" in normalized:
             parameters["referenced_tool"] = self._resolve_latest("tools")
+        optimization_metric = self._infer_optimization_metric(normalized)
+        if optimization_metric:
+            parameters.setdefault("optimization_metric", optimization_metric)
         parameters["browser_actions"] = self._derive_browser_actions(normalized)
         return parameters
 
@@ -196,25 +238,41 @@ class ParameterResolver:
             actions.append("navigate")
         return actions
 
+    def _infer_optimization_metric(self, normalized: str) -> Optional[str]:
+        if any(phrase in normalized for phrase in ["latency", "response time", "faster", "speed"]):
+            return "latency"
+        if any(keyword in normalized for keyword in ["throughput", "qps", "rps", "traffic"]):
+            return "throughput"
+        if any(keyword in normalized for keyword in ["memory", "size", "footprint", "lighter", "smaller"]):
+            return "size"
+        if "cost" in normalized:
+            return "cost"
+        return None
+
 
 class AmbiguityScanner:
     """Detect ambiguous phrasing and request clarification when needed."""
 
-    def __init__(self, threshold: float = 0.62) -> None:
+    def __init__(self, threshold: float = 0.5) -> None:
         self.threshold = threshold
+        self.pronoun_pattern = re.compile(r"\b(it|that|this)\b")
 
     def scan(self, intent: IntentResult, parameters: Dict[str, object], text: str) -> List[str]:
         questions: List[str] = []
         normalized = text.lower()
         if intent.confidence < self.threshold:
             questions.append("Please clarify the exact outcome you want and priority constraints.")
-        if "it" in normalized or "that" in normalized:
+        if self.pronoun_pattern.search(normalized) and not self._has_grounded_target(parameters):
             questions.append("Which artifact or service does 'it/that' refer to?")
-        if "optimize" in normalized and "metric" not in normalized:
+        if "optimize" in normalized and "optimization_metric" not in parameters and "metric" not in normalized:
             questions.append("Which optimization metric should be used (latency, throughput, size)?")
         if "form" in normalized and not parameters.get("target_website"):
             questions.append("Which website hosts the form to fill?")
         return questions
+
+    def _has_grounded_target(self, parameters: Dict[str, object]) -> bool:
+        anchored_keys = {"target_website", "file_path", "endpoint", "latest_artifact", "referenced_tool"}
+        return any(parameters.get(key) for key in anchored_keys)
 
 
 class IntentEngine:
@@ -225,7 +283,8 @@ class IntentEngine:
         memory: MemoryManager,
         world_model: WorldModel,
         tool_registry: ToolRegistry,
-        ambiguity_threshold: float = 0.62,
+        ambiguity_threshold: float = 0.5,
+        plugins: Optional[Iterable[IntentEnginePlugin]] = None,
     ) -> None:
         self.classifier = IntentClassifier(world_model)
         self.extractor = GoalExtractor(memory, world_model, tool_registry)
@@ -233,13 +292,26 @@ class IntentEngine:
         self.scanner = AmbiguityScanner(threshold=ambiguity_threshold)
         self.world_model = world_model
         self.memory = memory
+        self.plugins: List[IntentEnginePlugin] = list(plugins or [])
 
     def run(self, text: str) -> NormalizedGoal:
         intent = self.classifier.classify(text)
         goal_type, metadata = self.extractor.extract(text, intent)
         parameters = self.resolver.resolve(text, metadata)
+        for plugin in self.plugins:
+            enriched = plugin.enhance_parameters(text, intent, parameters)
+            if enriched:
+                parameters.update(enriched)
         ambiguities = self.scanner.scan(intent, parameters, text)
-        preferences = ["Professional", "Concise"]
+        for plugin in self.plugins:
+            plugin_ambiguities = plugin.adjust_ambiguities(text, intent, parameters, ambiguities)
+            if plugin_ambiguities:
+                ambiguities = plugin_ambiguities
+        preferences = ["Professional", "Helpful", "Conversational", "Concise"]
+        for plugin in self.plugins:
+            plugin_preferences = plugin.adjust_preferences(text, intent, parameters, preferences)
+            if plugin_preferences:
+                preferences = self._merge_preferences(preferences, plugin_preferences)
         context = {
             "world": metadata.get("resources", []),
             "tools": metadata.get("tools", {}),
@@ -263,3 +335,68 @@ class IntentEngine:
             metadata={"intent": intent.intent, "domain": intent.domain},
         )
         return normalized
+
+    def _merge_preferences(self, base: List[str], additions: List[str]) -> List[str]:
+        merged: List[str] = []
+        seen = set()
+        for pref in [*base, *additions]:
+            if pref not in seen:
+                merged.append(pref)
+                seen.add(pref)
+        return merged
+
+
+class PreferenceLearningPlugin(IntentEnginePlugin):
+    """Lightweight plugin that captures tone hints and reuses them in future turns."""
+
+    def __init__(self, memory: MemoryManager, namespace: str = "conversation.preferences") -> None:
+        self.memory = memory
+        self.namespace = namespace
+
+    def enhance_parameters(
+        self, text: str, intent: IntentResult, parameters: Dict[str, object]
+    ) -> Dict[str, object]:
+        return {}
+
+    def adjust_preferences(
+        self,
+        text: str,
+        intent: IntentResult,
+        parameters: Dict[str, object],
+        base_preferences: List[str],
+    ) -> List[str]:
+        normalized = text.lower()
+        learned: List[str] = []
+        record = self.memory.recall_recent(limit=1, namespace=self.namespace)
+        if record:
+            latest_preferences = record[0].get("value", {})
+            if isinstance(latest_preferences, dict):
+                learned = list(latest_preferences.get("preferences", []))
+        if any(keyword in normalized for keyword in ["casual", "friendly", "approachable", "warm"]):
+            learned.append("Casual")
+        merged = self._merge_preferences(base_preferences, learned)
+        self.memory.store_fact(
+            self.namespace,
+            key=None,
+            value={"preferences": merged, "intent": intent.intent, "text": text},
+            metadata={"domain": intent.domain},
+        )
+        return merged
+
+    def adjust_ambiguities(
+        self,
+        text: str,
+        intent: IntentResult,
+        parameters: Dict[str, object],
+        ambiguities: List[str],
+    ) -> List[str]:
+        return ambiguities
+
+    def _merge_preferences(self, base: List[str], additions: List[str]) -> List[str]:
+        merged: List[str] = []
+        seen = set()
+        for pref in [*base, *additions]:
+            if pref not in seen:
+                merged.append(pref)
+                seen.add(pref)
+        return merged
