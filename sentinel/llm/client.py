@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Iterable
@@ -37,7 +38,12 @@ class LLMClient:
 
     def chat(self, messages: Iterable[ChatMessage], max_tokens: int = 512) -> str | None:
         if not self.enabled:
-            return None
+            message = (
+                "LLM backend is disabled or missing credentials. "
+                f"backend={self.cfg.backend}, model={self.cfg.model}"
+            )
+            logger.warning(message)
+            return message
 
         url = f"{self.cfg.base_url}/chat/completions"
         payload: dict[str, Any] = {
@@ -62,9 +68,24 @@ class LLMClient:
                 raw = resp.read().decode("utf-8", errors="replace")
             data = json.loads(raw)
             return (data.get("choices") or [{}])[0].get("message", {}).get("content")
-        except Exception as e:
-            logger.warning("LLM chat failed; falling back. err=%s", e)
-            return None
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else ""
+            snippet = body[:300]
+            message = (
+                "LLM request failed. "
+                f"backend={self.cfg.backend}, base_url={self.cfg.base_url}, model={self.cfg.model}, "
+                f"status={exc.code}, response={snippet}"
+            )
+            logger.error(message)
+            return message
+        except Exception as exc:
+            message = (
+                "LLM request failed. "
+                f"backend={self.cfg.backend}, base_url={self.cfg.base_url}, model={self.cfg.model}, "
+                f"error={exc}"
+            )
+            logger.error(message)
+            return message
 
 
 DEFAULT_SYSTEM_PROMPT = (
