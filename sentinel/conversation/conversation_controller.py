@@ -57,23 +57,7 @@ class ConversationController:
         session_context = self.dialog_manager.get_session_context()
 
         if not self._should_activate_autonomy(text):
-            response = self.dialog_manager.format_agent_response(
-                "I'm ready when you want to start a specific task or project."
-            )
-            self.dialog_manager.record_turn(
-                text,
-                response,
-                context=session_context,
-                normalized_goal=None,
-                questions=[],
-            )
-            return {
-                "response": response,
-                "normalized_goal": None,
-                "task_graph": None,
-                "trace": None,
-                "dialog_context": session_context,
-            }
+            return self._conversational_frontend_response(text, session_context)
 
         normalized_goal = self.intent_engine.run(text)
         self.dialog_manager.remember_goal(normalized_goal)
@@ -118,10 +102,36 @@ class ConversationController:
         trimmed = text.strip()
         explicit = trimmed.startswith("/auto") or "start project" in trimmed.lower()
         inferred = should_trigger_autonomy(trimmed)
-        activate = explicit or inferred
         if len(trimmed.split()) <= 2 and not explicit:
-            return False
-        return activate
+            return inferred
+        return explicit or inferred
+
+    def _conversational_frontend_response(self, text: str, session_context: Dict[str, object]) -> Dict[str, object]:
+        domain = self.world_model.get_domain(text)
+        capabilities = self.world_model.list_capabilities(domain.name)
+        capability_hint = ", ".join(capabilities[:3]) if capabilities else "planning, coding, research"
+        response = self.dialog_manager.format_agent_response(
+            (
+                f"I can help with {domain.name} topics. "
+                f"Tell me the concrete outcome you want and I'll plan and execute it. "
+                f"Common things I can do: {capability_hint}."
+            )
+        )
+        conversation_context = self.dialog_manager.build_context(text)
+        self.dialog_manager.record_turn(
+            text,
+            response,
+            context=conversation_context or session_context,
+            normalized_goal=None,
+            questions=[],
+        )
+        return {
+            "response": response,
+            "normalized_goal": None,
+            "task_graph": None,
+            "trace": None,
+            "dialog_context": session_context,
+        }
 
     # ------------------------------------------------------------------
     # Internal helpers
