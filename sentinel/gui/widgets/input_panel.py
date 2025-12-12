@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import TclError, ttk
 from typing import Callable
 
 from sentinel.gui.theme import load_theme
@@ -32,13 +32,25 @@ class InputPanel(ttk.Frame):
             foreground=colors["panel_bg"],
             padding=self.theme["spacing"]["pad_small"],
         )
+        style.configure(
+            "InputPanel.TEntry",
+            foreground=colors["text"],
+            fieldbackground=colors["panel_bg"],
+            insertcolor=colors["accent"],
+            borderwidth=0,
+        )
 
     def _build_widgets(self, on_send: Callable[[str], None]) -> None:
         colors = self.theme["colors"]
         fonts = self.theme["fonts"]
         self.entry_var = tk.StringVar()
-        self.entry = ttk.Entry(self, textvariable=self.entry_var, font=fonts["body"])
+
+        # Prefer ttk.Entry so native themes still work; fallback to tk.Entry if unsupported
+        self.entry = self._create_entry(fonts, colors)
         self.entry.grid(row=0, column=0, sticky="nsew", padx=(0, self.theme["spacing"]["pad_small"]))
+
+        # Clipboard shortcuts for common platforms
+        self._bind_clipboard_shortcuts()
 
         self.send_button = ttk.Button(
             self,
@@ -54,6 +66,9 @@ class InputPanel(ttk.Frame):
         self.columnconfigure(1, weight=0)
         self.configure(style="InputPanel.TFrame")
 
+
+    def _create_entry(self, fonts: dict, colors: dict) -> tk.Entry:
+=======
         # Base styles
 
         entry_config = {
@@ -70,10 +85,25 @@ class InputPanel(ttk.Frame):
         self.entry.configure(background=colors["panel_bg"], foreground=colors["text"])
 
         # Windows tkinter does not support -insertbackground on ttk.Entry
+
         try:
-            self.entry.configure(insertbackground=colors["accent"])
-        except Exception:
-            pass
+            return ttk.Entry(
+                self,
+                textvariable=self.entry_var,
+                font=fonts["body"],
+                style="InputPanel.TEntry",
+            )
+        except TclError:
+            return tk.Entry(
+                self,
+                textvariable=self.entry_var,
+                font=fonts["body"],
+                bg=colors["panel_bg"],
+                fg=colors["text"],
+                insertbackground=colors["accent"],
+                relief="flat",
+                highlightthickness=0,
+            )
 
     def _handle_send(self, on_send: Callable[[str], None]) -> None:
         text = self.entry_var.get().strip()
@@ -81,6 +111,27 @@ class InputPanel(ttk.Frame):
             return
         on_send(text)
         self.entry_var.set("")
+        self.entry.focus_set()
+
+    def _bind_clipboard_shortcuts(self) -> None:
+        for sequence in ("<Control-c>", "<Command-c>"):
+            self.entry.bind(sequence, self._copy)
+        for sequence in ("<Control-v>", "<Command-v>"):
+            self.entry.bind(sequence, self._paste)
+
+    def _copy(self, event=None):  # type: ignore[override]
+        try:
+            self.entry.event_generate("<<Copy>>")
+        except TclError:
+            return "break"
+        return "break"
+
+    def _paste(self, event=None):  # type: ignore[override]
+        try:
+            self.entry.event_generate("<<Paste>>")
+        except TclError:
+            return "break"
+        return "break"
 
     def current_text(self) -> str:
         return self.entry_var.get().strip()
