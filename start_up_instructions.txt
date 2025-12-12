@@ -46,13 +46,19 @@ Run Sentinel MAX from an external SSD with data persisted in a sandboxed path, p
 Save the following as `start_sentinel_gui.bat` next to the repo and double-click it after editing the paths:
 ```
 @echo off
+
 set SENTINEL_STORAGE_DIR=E:\\sentinel-data\\memory
 set SENTINEL_PROJECT_STORAGE=E:\\sentinel-data\\projects
 call .\\.venv\\Scripts\\activate.bat
+=======
+set SENTINEL_STORAGE_DIR=E:\sentinel-data\memory
+set SENTINEL_PROJECT_STORAGE=E:\sentinel-data\projects
+call .\.venv\Scripts\activate.bat
 python -m sentinel.main --mode gui
 ```
 
 6) Quick health + smoke checks
+
 --------------------------------
 - Autonomy loop smoke test (fast):
   - `python -m pytest sentinel/tests/test_autonomy_loop_subsystem.py`
@@ -62,10 +68,20 @@ python -m sentinel.main --mode gui
   - `python -m pytest sentinel/tests/test_policy_engine_subsystem.py sentinel/tests/test_reflection_engine_subsystem.py`
 - Long-horizon storage health readout (prints storage readability/writability and project counts):
   - `python - <<"PY"`
+=======
+------------------------------
+- Autonomy loop smoke test (fast):
+  - `python -m pytest sentinel/tests/test_autonomy_loop_subsystem.py`
+- Memory and ranking pipeline sanity: 
+  - `python -m pytest sentinel/tests/test_memory_intelligence_subsystem.py`
+- Long-horizon storage health readout (prints storage readability/writability and project counts):
+  - `python - <<"PY"
+
 from sentinel.project.long_horizon_engine import LongHorizonProjectEngine
 print(LongHorizonProjectEngine().health_report())
 PY`
 - Full suite (slower): `python -m pytest sentinel/tests`
+
 
 7) Hallucination/loop prevention, benchmarks, and upgrade hygiene
 -----------------------------------------------------------------
@@ -77,6 +93,15 @@ PY`
   - Agent-originated code changes flow through PatchAuditor and SelfModificationEngine; rejected patches are dropped before touching disk, and HotReloader can refresh modules without restarting.
   - Keep upgrades pruned by using feature branches, running smoke tests before merge, and periodically cleaning stale artifacts under `SENTINEL_PROJECT_STORAGE`.
   - If you enable the agent to auto-apply its own patches, keep approval gating on in `ExecutionController` and review diffs to avoid drift.
+=======
+7) Hallucination/loop prevention and upgrade hygiene
+----------------------------------------------------
+- Runtime guardrails already active: PolicyEngine (permissions/metadata/parallelism enforcement), Sandbox (restricted builtins), PatchAuditor + SelfModificationEngine (block risky edits like absolute paths, subprocess/rm), approval gating in ExecutionController, and ReflectionEngine for self-critiques.
+- To keep upgrades tidy:
+  - Work on feature branches; run the smoke checks above before merging.
+  - Let the agent’s self-modification output pass through PatchAuditor and review diffs before applying.
+  - Periodically prune old project artifacts under your `SENTINEL_PROJECT_STORAGE` path if no longer needed.
+
 
 8) Will it still run from the SSD?
 ----------------------------------
