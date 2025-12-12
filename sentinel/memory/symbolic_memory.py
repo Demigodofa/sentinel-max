@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
 from typing import Any, Dict, List, Optional
@@ -48,7 +48,7 @@ class SymbolicMemory:
     def _persist(self) -> None:
         payload = {
             "namespaces": self._namespaces,
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         temp_path = self.storage_path.with_suffix(".tmp")
         try:
@@ -63,7 +63,7 @@ class SymbolicMemory:
                     logger.debug("Could not remove temp file after persistence failure")
 
     def _timestamp(self) -> str:
-        return datetime.utcnow().isoformat()
+        return datetime.now(timezone.utc).isoformat()
 
     def _ensure_namespace(self, namespace: str) -> Dict[str, Dict[str, Any]]:
         return self._namespaces.setdefault(namespace, {})

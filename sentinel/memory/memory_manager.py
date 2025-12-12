@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
 from typing import Any, Dict, List, Optional
@@ -20,7 +20,7 @@ class MemoryRecord:
     category: str
     content: str
     metadata: Dict[str, Any] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class MemoryManager:
@@ -47,7 +47,7 @@ class MemoryManager:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Store a free-form text snippet in both symbolic and vector memories."""
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
         metadata = metadata or {}
         record_key = str(uuid4())
         fact_value = {
@@ -134,11 +134,11 @@ class MemoryManager:
         content = entry.get("value", {}).get("text") if isinstance(entry.get("value"), dict) else entry.get("value")
         if content is None:
             content = entry.get("value", "")
-        timestamp_raw = entry.get("updated_at") or entry.get("created_at") or datetime.utcnow().isoformat()
+        timestamp_raw = entry.get("updated_at") or entry.get("created_at") or datetime.now(timezone.utc).isoformat()
         try:
             timestamp = datetime.fromisoformat(timestamp_raw)
         except Exception:
-            timestamp = datetime.utcnow()
+            timestamp = datetime.now(timezone.utc)
         return MemoryRecord(category=entry.get("namespace", ""), content=str(content), metadata=entry.get("metadata", {}), timestamp=timestamp)
 
     def export_state(self) -> Dict[str, Any]:

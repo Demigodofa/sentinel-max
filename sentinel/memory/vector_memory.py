@@ -5,7 +5,7 @@ import hashlib
 import importlib.util
 import math
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -66,7 +66,7 @@ class VectorMemory:
     def add(self, text: str, metadata: Optional[Dict[str, Any]] = None, namespace: str = "default") -> str:
         embedding = self._embed(text)
         entry_id = str(uuid4())
-        timestamp = datetime.utcnow().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
         with self._lock:
             self._entries[entry_id] = {
                 "id": entry_id,

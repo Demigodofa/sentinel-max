@@ -1,7 +1,7 @@
 """Reflection utilities for summarizing execution traces."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 import time
 
@@ -71,7 +71,7 @@ class ReflectionEngine(ProjectReflectionEngine):
 
 
 def summarize_trace(trace: ExecutionTrace) -> str:
-    timestamp = datetime.utcnow().isoformat()
+    timestamp = datetime.now(timezone.utc).isoformat()
     return f"[{timestamp}] {trace.summary()}"
 
 

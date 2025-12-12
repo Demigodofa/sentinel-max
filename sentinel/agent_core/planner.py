@@ -1,7 +1,7 @@
 """Task planner for Sentinel MAX."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 from typing import List, Optional
 from uuid import uuid4
@@ -123,7 +123,7 @@ class Planner:
                 value={
                     "goal": goal,
                     "nodes": [node.__dict__ for node in graph],
-                    "created_at": datetime.utcnow().isoformat(),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
         except Exception as exc:  # pragma: no cover - defensive logging
