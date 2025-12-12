@@ -1,4 +1,4 @@
-# Sentinel MAX — System Specification
+# Sentinel MAX — System Specification (updated 2024-05-19)
 
 This document is the living system specification for Sentinel MAX. It summarizes the current architecture and behaviors based on the implemented code, README, and subsystems.
 
@@ -48,6 +48,7 @@ This document is the living system specification for Sentinel MAX. It summarizes
 
 ### Interfaces
 - Single entry point (`main.py`) supports CLI, Tkinter GUI, and FastAPI server modes. All modes delegate to the controller pipeline.
+- The `ConversationController` normalizes user text, routes slash commands (e.g., `/auto`, `/tool`, `/tools`), gathers confirmation when autonomy is off, and hands accepted goals to the planner/worker/reflection loop.
 
 ## Planning + Autonomy Flow
 1. Goal intake stored in memory under `goals`.
