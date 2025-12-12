@@ -1,6 +1,8 @@
 from __future__ import annotations
 from typing import Dict, Any, List
 
+from sentinel.llm.client import ChatMessage, LLMClient, DEFAULT_SYSTEM_PROMPT
+
 
 class DialogManager:
     """
@@ -10,6 +12,9 @@ class DialogManager:
     - dependency issues
     - milestones
     """
+
+    def __init__(self) -> None:
+        self._llm = LLMClient()
 
     # ------------------------------------------------------------
     # PROJECT OVERVIEW
@@ -110,12 +115,32 @@ class DialogManager:
     # ------------------------------------------------------------
 
     def respond_conversationally(self, text: str) -> str:
+        reply = self._llm.chat(
+            [ChatMessage("system", DEFAULT_SYSTEM_PROMPT), ChatMessage("user", text)],
+            max_tokens=400,
+        )
+        if reply and reply.strip():
+            return reply.strip()
         return "I hear you. What would you like to work on?"
 
     def acknowledge_information(self, text: str) -> str:
         return "Got it — I've noted that."
 
     def propose_plan(self, goal) -> str:
+        reply = self._llm.chat(
+            [
+                ChatMessage("system", DEFAULT_SYSTEM_PROMPT),
+                ChatMessage(
+                    "user",
+                    "Write a short execution plan (3-6 steps) for this task. "
+                    "Assume tools may exist for web_search, internet_extract, code_analyzer. "
+                    "Be concise.\n\nTASK:\n" + str(goal),
+                ),
+            ],
+            max_tokens=300,
+        )
+        if reply and reply.strip():
+            return reply.strip()
         return (
             "I can plan this:\n"
             f"{goal}\n\n"
