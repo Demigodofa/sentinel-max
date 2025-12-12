@@ -63,6 +63,13 @@ class ProjectReflectionEngine:
         }
 
 
+# Backwards compatibility for imports expecting ReflectionEngine
+class ReflectionEngine(ProjectReflectionEngine):
+    """Alias to retain legacy import paths."""
+
+    pass
+
+
 def summarize_trace(trace: ExecutionTrace) -> str:
     timestamp = datetime.utcnow().isoformat()
     return f"[{timestamp}] {trace.summary()}"

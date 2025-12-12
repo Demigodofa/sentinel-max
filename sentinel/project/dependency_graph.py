@@ -1,30 +1,21 @@
 """Dependency tracking for long-horizon project plans."""
 from __future__ import annotations
 
-
-from typing import Dict, List, Any, Set, Tuple
-=======
 from collections import defaultdict, deque
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Set, Tuple
 
 
 class ProjectDependencyGraph:
     """Build and analyze dependencies between planned project steps."""
 
     def build(self, plan: Dict[str, Any]) -> Dict[str, List[str]]:
-
         """Build a normalized dependency graph from a plan dictionary."""
         graph: Dict[str, List[str]] = {}
         for step_id, step in plan.items():
             dependencies = step.get("depends_on", [])
             if isinstance(dependencies, dict):
                 dependencies = dependencies.get("depends_on", [])
-            graph[step_id] = list(dependencies)
-=======
-        graph: Dict[str, List[str]] = {}
-        for step_id, step in plan.items():
-            deps = step.get("depends_on") or []
-            graph[step_id] = list(dict.fromkeys(deps))
+            graph[step_id] = list(dict.fromkeys(dependencies))
         return graph
 
     def normalize_steps(self, steps: List[Dict[str, Any]]) -> Dict[str, List[str]]:
@@ -34,21 +25,19 @@ class ProjectDependencyGraph:
             step_id = step.get("id")
             if not step_id:
                 raise ValueError("Every step must include an 'id'")
+            if step_id in graph:
+                raise ValueError(f"Duplicate step id detected: {step_id}")
             deps = step.get("depends_on", [])
             if isinstance(deps, dict):
                 deps = deps.get("depends_on", [])
             if not isinstance(deps, list):
                 raise ValueError(f"depends_on for {step_id} must be a list")
-            graph[step_id] = deps
+            graph[step_id] = list(dict.fromkeys(deps))
         return graph
 
     def compute_depths(self, graph: Dict[str, List[str]]) -> Dict[str, int]:
-        """
-        Compute dependency depths for each node.
-        Depth of a root node is 0; a node depending on a root is 1, etc.
-        """
+        """Compute dependency depths for each node."""
         depths: Dict[str, int] = {}
-
         visiting: Set[str] = set()
 
         def dfs(node: str) -> int:
@@ -60,10 +49,7 @@ class ProjectDependencyGraph:
             deps = graph.get(node, [])
             if isinstance(deps, dict):
                 deps = deps.get("depends_on", [])
-            if not deps:
-                depth = 0
-            else:
-                depth = 1 + max(dfs(dep) for dep in deps)
+            depth = 0 if not deps else 1 + max(dfs(dep) for dep in deps)
             visiting.remove(node)
             depths[node] = depth
             return depth
@@ -77,13 +63,7 @@ class ProjectDependencyGraph:
         stack: Set[str] = set()
         cycles: List[List[str]] = []
 
-        def _dependencies(node: str) -> List[str]:
-            deps = graph.get(node, [])
-            if isinstance(deps, dict):
-                return deps.get("depends_on", [])
-            return deps
-
-        def _dependencies(node: str) -> List[str]:
+        def dependencies(node: str) -> List[str]:
             deps = graph.get(node, [])
             if isinstance(deps, dict):
                 return deps.get("depends_on", [])
@@ -98,23 +78,23 @@ class ProjectDependencyGraph:
                 return
             visited.add(node)
             stack.add(node)
-            for dep in _dependencies(node):
+            for dep in dependencies(node):
                 dfs(dep, path + [dep])
             stack.remove(node)
 
         for node in graph:
             if node not in visited:
-                visit(node, [node])
+                dfs(node, [node])
         return cycles
 
-    def find_unresolved(self, graph: Dict[str, List[str]]) -> Dict[str, List[str]]:
+    def find_unresolved(self, graph: Dict[str, List[str]]) -> List[str]:
         nodes = set(graph.keys())
-        unresolved: Dict[str, List[str]] = {}
-        for node, deps in graph.items():
+        unresolved: List[str] = []
+        for deps in graph.values():
             dependencies = deps.get("depends_on", deps) if isinstance(deps, dict) else deps
-            for d in dependencies:
-                if d not in all_nodes:
-                    unresolved.append(d)
+            for dep in dependencies:
+                if dep not in nodes and dep not in unresolved:
+                    unresolved.append(dep)
         return unresolved
 
     def validate(self, graph: Dict[str, List[str]]) -> Tuple[List[List[str]], List[str]]:
@@ -127,16 +107,16 @@ class ProjectDependencyGraph:
         indegree: Dict[str, int] = defaultdict(int)
         adjacency: Dict[str, Set[str]] = defaultdict(set)
 
-        def dfs(node: str):
-            if node in visited:
-                return
-            visited.add(node)
-            dependencies = graph.get(node, [])
-            if isinstance(dependencies, dict):
-                dependencies = dependencies.get("depends_on", [])
+        for node, deps in graph.items():
+            dependencies = deps.get("depends_on", deps) if isinstance(deps, dict) else deps
             for dep in dependencies:
-                dfs(dep)
-            order.append(node)
+                indegree[node] += 1
+                adjacency[dep].add(node)
+            if node not in indegree:
+                indegree[node] = indegree[node]
+
+        queue: deque[str] = deque(sorted([n for n, deg in indegree.items() if deg == 0]))
+        ordered: List[str] = []
 
         while queue:
             current = queue.popleft()

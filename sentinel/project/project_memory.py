@@ -2,65 +2,44 @@
 from __future__ import annotations
 
 import json
+import os
 import time
-
-import uuid
-import errno
-from typing import Dict, List, Any
-=======
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 class ProjectMemory:
     """Lightweight JSON-backed storage for project metadata and logs."""
 
-
-    def __init__(self, storage_path: str = "projects"):
-        env_override = os.getenv("SENTINEL_PROJECT_STORAGE")
-        resolved_path = env_override or storage_path
-        self.storage_path = os.path.abspath(os.path.expanduser(resolved_path))
-        os.makedirs(self.storage_path, exist_ok=True)
-=======
     def __init__(self, storage_path: str | Path = "projects") -> None:
-        self.storage_dir = Path(storage_path)
+        self.storage_dir = Path(os.path.expanduser(str(storage_path)))
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def storage_path(self) -> str:
+        return str(self.storage_dir)
 
     def _project_path(self, project_id: str) -> Path:
         return self.storage_dir / f"{project_id}.json"
 
-    def _atomic_write(self, path: str, payload: Dict[str, Any]) -> None:
-        tmp_path = f"{path}.tmp"
-        with open(tmp_path, "w", encoding="utf-8") as handle:
+    def _atomic_write(self, path: Path, payload: Dict[str, Any]) -> None:
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        with tmp_path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)
-        os.replace(tmp_path, path)
-
-    def health_check(self) -> Dict[str, Any]:
-        """Return storage diagnostics for external/sandbox deployments."""
-
-        diagnostics: Dict[str, Any] = {
-            "storage_path": self.storage_path,
-            "writable": False,
-            "readable": False,
-            "projects": 0,
-        }
-
-        try:
-            os.makedirs(self.storage_path, exist_ok=True)
-            diagnostics["writable"] = os.access(self.storage_path, os.W_OK)
-            diagnostics["readable"] = os.access(self.storage_path, os.R_OK)
-            diagnostics["projects"] = len(
-                [f for f in os.listdir(self.storage_path) if f.endswith(".json")]
-            )
-        except OSError as exc:  # pragma: no cover - defensive
-            diagnostics["error"] = {"errno": exc.errno, "message": exc.strerror}
-            if exc.errno == errno.ENOENT:
-                diagnostics["hint"] = "Ensure the sandbox path exists and is mounted."
-
-        return diagnostics
+        tmp_path.replace(path)
 
     def _validate_structure(self, data: Dict[str, Any]) -> None:
-        required_fields = {"project_id", "name", "description", "version", "goals", "plans", "dependencies", "history", "reflections"}
+        required_fields = {
+            "project_id",
+            "name",
+            "description",
+            "version",
+            "goals",
+            "plans",
+            "dependencies",
+            "logs",
+            "reflections",
+        }
         missing = required_fields.difference(data.keys())
         if missing:
             raise ValueError(f"Project data missing required fields: {', '.join(sorted(missing))}")
@@ -70,10 +49,15 @@ class ProjectMemory:
             raise ValueError("plans must be a dictionary keyed by plan id")
         if not isinstance(data.get("dependencies"), dict):
             raise ValueError("dependencies must be a dictionary")
-        if not isinstance(data.get("history"), list):
-            raise ValueError("history must be a list")
+        if not isinstance(data.get("logs"), list):
+            raise ValueError("logs must be a list")
         if not isinstance(data.get("reflections"), list):
             raise ValueError("reflections must be a list")
+
+    def _generate_project_id(self) -> str:
+        import uuid
+
+        return str(uuid.uuid4())
 
     def create(self, name: str, description: str) -> Dict[str, Any]:
         project_id = self._generate_project_id()
@@ -83,61 +67,65 @@ class ProjectMemory:
             "description": description,
             "created_at": time.time(),
             "updated_at": time.time(),
+            "version": 1,
             "goals": {},
             "plans": {},
             "dependencies": {},
             "logs": [],
             "reflections": [],
         }
-        self.save(project_id, data)
+        self._validate_structure(data)
+        self._atomic_write(self._project_path(project_id), data)
         return data
 
     def load(self, project_id: str) -> Dict[str, Any]:
-        path = self._path(project_id)
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"No project found: {project_id}")
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    def save(self, project_id: str, data: Dict[str, Any]) -> None:
-        data["updated_at"] = time.time()
-        data["version"] = data.get("version", 0) + 1
+        path = self._project_path(project_id)
+        if not path.exists():
+            raise FileNotFoundError(f"Project not found: {project_id}")
+        with path.open("r", encoding="utf-8") as f:
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+                raise ValueError(f"Corrupt project file: {project_id}") from exc
         self._validate_structure(data)
-        path = self._path(project_id)
-        self._atomic_write(path, data)
+        return data
 
-    def list_projects(self) -> List[Dict[str, str]]:
+    def save(self, project_id: str, project_data: Dict[str, Any]) -> None:
+        project_data = dict(project_data)
+        project_data["updated_at"] = time.time()
+        project_data["version"] = project_data.get("version", 0) + 1
+        self._validate_structure(project_data)
+        self._atomic_write(self._project_path(project_id), project_data)
+
+    def list_projects(self) -> List[Dict[str, Any]]:
         results = []
-        for file in os.listdir(self.storage_path):
-            if file.endswith(".json"):
-                with open(os.path.join(self.storage_path, file), "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    results.append({
+        for file in self.storage_dir.glob("*.json"):
+            with file.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+                results.append(
+                    {
                         "project_id": data["project_id"],
                         "name": data.get("name", ""),
                         "description": data.get("description", ""),
                         "updated_at": data.get("updated_at"),
                         "version": data.get("version"),
-                    })
+                    }
+                )
         return sorted(results, key=lambda r: r.get("updated_at") or 0, reverse=True)
-=======
-        path = self._project_path(project_id)
-        if not path.exists():
-            raise FileNotFoundError(f"Project not found: {project_id}")
-        with path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data
 
-    def save(self, project_id: str, project_data: Dict[str, Any]) -> None:
-        project_data["updated_at"] = time.time()
-        path = self._project_path(project_id)
-        with path.open("w", encoding="utf-8") as f:
-            json.dump(project_data, f, indent=2)
+    def health_check(self) -> Dict[str, Any]:
+        diagnostics: Dict[str, Any] = {
+            "storage_path": self.storage_path,
+            "writable": os.access(self.storage_path, os.W_OK),
+            "readable": os.access(self.storage_path, os.R_OK),
+            "projects": len(list(self.storage_dir.glob("*.json"))),
+        }
+        return diagnostics
 
     def append_log(self, project_id: str, entry: Dict[str, Any]) -> None:
         project = self.load(project_id)
-        entry = {**entry, "timestamp": time.time()}
-        project.setdefault("logs", []).append(entry)
+        record = {**entry, "timestamp": time.time()}
+        project.setdefault("logs", []).append(record)
         self.save(project_id, project)
 
     def append_reflection(self, project_id: str, reflection: Dict[str, Any]) -> None:
@@ -145,12 +133,6 @@ class ProjectMemory:
         record = {**reflection, "timestamp": time.time()}
         project.setdefault("reflections", []).append(record)
         self.save(project_id, project)
-
-    def append_reflection(self, project_id: str, entry: Dict[str, Any]) -> None:
-        data = self.load(project_id)
-        entry["timestamp"] = time.time()
-        data["reflections"].append(entry)
-        self.save(project_id, data)
 
     def upsert_goals(self, project_id: str, goals: List[Dict[str, Any]]) -> Dict[str, Any]:
         data = self.load(project_id)
@@ -165,7 +147,7 @@ class ProjectMemory:
 
     def record_plan(self, project_id: str, plan_id: str, plan: Dict[str, Any]) -> Dict[str, Any]:
         data = self.load(project_id)
-        data["plans"][plan_id] = plan
+        data.setdefault("plans", {})[plan_id] = plan
         self.save(project_id, data)
         return data
 
@@ -186,9 +168,3 @@ class ProjectMemory:
     def snapshot(self, project_id: str) -> Dict[str, Any]:
         """Return a copy of the current project state."""
         return self.load(project_id)
-=======
-    def _generate_project_id(self) -> str:
-        import uuid
-
-        return str(uuid.uuid4())
-

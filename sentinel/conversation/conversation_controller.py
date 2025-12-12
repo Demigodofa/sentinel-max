@@ -1,9 +1,10 @@
 """Unified conversational pipeline orchestrator."""
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, Optional, TYPE_CHECKING
 
-from sentinel.agent_core.autonomy import AutonomyLoop
+if TYPE_CHECKING:
+    from sentinel.agent_core.autonomy import AutonomyLoop
 from sentinel.agent_core.base import ExecutionTrace
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
@@ -26,7 +27,7 @@ class ConversationController:
         dialog_manager: DialogManager,
         intent_engine: IntentEngine,
         nl_to_taskgraph: NLToTaskGraph,
-        autonomy: AutonomyLoop,
+        autonomy: "AutonomyLoop",
         planner: AdaptivePlanner,
         memory: MemoryManager,
         world_model: WorldModel,

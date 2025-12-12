@@ -1,6 +1,4 @@
 """Compatibility wrapper for the conversation dialog manager."""
-from sentinel.conversation.dialog_manager import DialogManager
-
 from typing import Dict, Optional
 
 from sentinel.memory.memory_manager import MemoryManager
