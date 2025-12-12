@@ -1,6 +1,7 @@
-# Sentinel MAX
+# Sentinel MAX (updated 2024-05-19)
 
 Enterprise-grade autonomous agent framework with long-horizon governance, reflective execution, and sandboxed tooling.
+Run it via CLI/GUI/API and let the conversation router hand confirmed goals to the planner/worker/reflection stack.
 
 ## Highlights
 
@@ -8,6 +9,12 @@ Enterprise-grade autonomous agent framework with long-horizon governance, reflec
 - **Policy-First Execution**: Safety, permission, determinism, and autonomy constraints enforced across planning and runtime.
 - **Memory Intelligence**: Symbolic + vector storage with curated contexts for planning, execution, and reflection.
 - **Simulation & Tooling**: Sandbox-backed tool registry, simulation sandbox, and multi-agent coordination for tool evolution.
+
+## Runtime pipeline
+
+- **Controller orchestration**: `SentinelController` instantiates memory, world model, tool registry, sandbox/simulation sandboxes, policy engine, planner, worker, reflection, autonomy loop, research engine, and hot reload/self-modification guardrails.
+- **Conversation router**: `ConversationController` normalizes chat input, routes slash commands, requests confirmation when autonomy is off, and delivers accepted goals to the planner/worker/reflection loop.
+- **Default tools**: Filesystem list/read/write/delete, sandboxed exec, deterministic web search, internet extractor, code analyzer, microservice builder, browser agent, and a configurable echo tool registered at startup.
 
 ## Quickstart
 
@@ -26,6 +33,9 @@ Enterprise-grade autonomous agent framework with long-horizon governance, reflec
    ```bash
    python -m sentinel.main --mode cli
    ```
+
+   - `/tools` lists registered tools; `/tool <name> <json>` runs a tool through the sandbox.
+   - `/auto on` enables confirmation-free autonomy for the current session.
 
 3. **Execute the full test suite**
 
