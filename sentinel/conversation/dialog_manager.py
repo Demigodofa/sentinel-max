@@ -147,5 +147,5 @@ class DialogManager:
         return (
             "I can plan this:\n"
             f"{goal}\n\n"
-            "Say `/auto` when you want me to execute autonomously."
+            "Execute? (y/n) — or say `/auto` to run automatically."
         )
