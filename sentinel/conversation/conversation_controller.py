@@ -1,6 +1,7 @@
 """Unified conversational pipeline orchestrator."""
 from __future__ import annotations
 
+import json
 from typing import Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -54,6 +55,8 @@ class ConversationController:
         )
         self.auto_mode_enabled: bool = False
         self.pending_goal: Optional[NormalizedGoal] = None
+        self.pending_plan: Optional[dict] = None
+        self.pending_goal_text: Optional[str] = None
 
     def handle_input(self, text: str) -> Dict[str, object]:
         logger.info("Conversation pipeline received: %s", text)
@@ -77,6 +80,8 @@ class ConversationController:
         if normalized_text in {"/auto off", "/auto disable"}:
             self.auto_mode_enabled = False
             self.pending_goal = None
+            self.pending_plan = None
+            self.pending_goal_text = None
             response = self.dialog_manager.format_agent_response(
                 "Auto mode disabled. I'll ask before executing plans."
             )
@@ -89,20 +94,62 @@ class ConversationController:
                 "dialog_context": session_context,
             }
 
-        if self.pending_goal and normalized_text in {"y", "yes"}:
-            goal_to_execute = self.pending_goal
-            self.pending_goal = None
-            return self._execute_with_goal(text, goal_to_execute, session_context)
-
-        if self.pending_goal and normalized_text in {"n", "no"}:
-            self.pending_goal = None
-            response = self.dialog_manager.format_agent_response(
-                "No problem. Tell me what to adjust before executing."
-            )
+        if normalized_text == "/tools":
+            tool_names = sorted(self.planner.tool_registry.list_tools())
+            if not tool_names:
+                tool_list = "No tools registered."
+            else:
+                tool_list = "\n".join(f"- {name}" for name in tool_names)
+            response = self.dialog_manager.format_agent_response(tool_list)
             self.dialog_manager.record_turn(text, response, context=session_context)
             return {
                 "response": response,
                 "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        if normalized_text.startswith("/tool"):
+            return self._handle_direct_tool_call(text, session_context)
+
+        if normalized_text == "/auto" and self.pending_plan:
+            return self._execute_pending_plan(text, session_context)
+
+        if self.pending_plan and normalized_text in {"y", "yes", "run", "execute"}:
+            return self._execute_pending_plan(text, session_context)
+
+        if self.pending_plan and normalized_text in {"n", "no", "cancel"}:
+            self.pending_plan = None
+            self.pending_goal = None
+            self.pending_goal_text = None
+            response = self.dialog_manager.format_agent_response("Okay, canceled the pending plan.")
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        if self._looks_like_task(normalized_text):
+            normalized_goal = self.intent_engine.run(text)
+            self.pending_goal = normalized_goal
+            self.pending_goal_text = normalized_goal.as_goal_statement()
+            self.pending_plan = {"normalized_goal": normalized_goal}
+            if self.auto_mode_enabled:
+                return self._execute_pending_plan(text, session_context)
+            response = self.dialog_manager.propose_plan(self.pending_goal_text)
+            self.dialog_manager.record_turn(
+                text,
+                response,
+                context=session_context,
+                normalized_goal=normalized_goal,
+            )
+            return {
+                "response": response,
+                "normalized_goal": normalized_goal,
                 "task_graph": None,
                 "trace": None,
                 "dialog_context": session_context,
@@ -223,6 +270,85 @@ class ConversationController:
             "trace": trace,
             "dialog_context": session_context,
         }
+
+    def _execute_pending_plan(self, user_input: str, session_context: Dict[str, object]) -> Dict[str, object]:
+        plan = self.pending_plan or {}
+        normalized_goal = plan.get("normalized_goal") or self.pending_goal
+        self.pending_plan = None
+        self.pending_goal = None
+        self.pending_goal_text = None
+        if not normalized_goal:
+            response = self.dialog_manager.format_agent_response("No pending plan to execute.")
+            self.dialog_manager.record_turn(user_input, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+        return self._execute_with_goal(user_input, normalized_goal, session_context)
+
+    def _handle_direct_tool_call(self, text: str, session_context: Dict[str, object]) -> Dict[str, object]:
+        parts = text.strip().split(" ", 2)
+        if len(parts) < 3:
+            response = self.dialog_manager.format_agent_response("Usage: /tool <name> <json_args>")
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        name, raw_args = parts[1], parts[2]
+        try:
+            parsed_args = json.loads(raw_args)
+            if not isinstance(parsed_args, dict):
+                raise ValueError("Tool arguments must be a JSON object")
+        except Exception as exc:  # pragma: no cover - defensive parsing
+            response = self.dialog_manager.format_agent_response(f"Invalid tool arguments: {exc}")
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        if not self.planner.tool_registry.has_tool(name):
+            response = self.dialog_manager.format_agent_response(f"Tool '{name}' is not registered.")
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        simulation = self.simulation_sandbox.simulate_tool_call(name, parsed_args, self.world_model)
+        if simulation.success:
+            outputs = simulation.predicted_outputs or simulation.benchmark
+            response_text = f"Tool '{name}' executed successfully: {outputs}"
+        else:
+            warnings = simulation.warnings or ["Unknown error"]
+            response_text = f"Tool '{name}' failed: {'; '.join(warnings)}"
+        response = self.dialog_manager.format_agent_response(response_text)
+        self.dialog_manager.record_turn(text, response, context=session_context)
+        return {
+            "response": response,
+            "normalized_goal": None,
+            "task_graph": None,
+            "trace": None,
+            "dialog_context": session_context,
+        }
+
+    def _looks_like_task(self, normalized_text: str) -> bool:
+        task_verbs = ("search", "browse", "create", "build", "write", "fix", "debug", "run")
+        return normalized_text.startswith(task_verbs) or "web" in normalized_text or "internet" in normalized_text
 
     def _execute_graph(self, normalized_goal: NormalizedGoal, task_graph) -> ExecutionTrace:
         goal_text = normalized_goal.as_goal_statement()
