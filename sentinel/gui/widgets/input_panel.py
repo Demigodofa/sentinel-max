@@ -62,6 +62,20 @@ class InputPanel(ttk.Frame):
         self.send_button.grid(row=0, column=1, sticky="e")
 
         self.entry.bind("<Return>", lambda _: self._handle_send(on_send))
+        for seq in ("<Control-a>", "<Command-a>"):
+            self.entry.bind(seq, self._select_all)
+        for seq in ("<Control-v>", "<Command-v>"):
+            self.entry.bind(seq, self._paste)
+        for seq in ("<Control-x>", "<Command-x>"):
+            self.entry.bind(seq, self._cut)
+        for seq in ("<Control-c>", "<Command-c>"):
+            self.entry.bind(seq, self._copy)
+        self.entry.bind("<Button-3>", self._open_menu)
+
+        self._menu = tk.Menu(self, tearoff=0)
+        self._menu.add_command(label="Cut", command=self._cut_menu)
+        self._menu.add_command(label="Copy", command=self._copy_menu)
+        self._menu.add_command(label="Paste", command=self._paste_menu)
 
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=0)
@@ -78,3 +92,35 @@ class InputPanel(ttk.Frame):
 
     def current_text(self) -> str:
         return self.entry_var.get().strip()
+
+    # Clipboard helpers -------------------------------------------------
+    def _select_all(self, event=None):  # type: ignore[override]
+        self.entry.selection_range(0, "end")
+        return "break"
+
+    def _copy(self, event=None):  # type: ignore[override]
+        self.entry.event_generate("<<Copy>>")
+        return "break"
+
+    def _cut(self, event=None):  # type: ignore[override]
+        self.entry.event_generate("<<Cut>>")
+        return "break"
+
+    def _paste(self, event=None):  # type: ignore[override]
+        self.entry.event_generate("<<Paste>>")
+        return "break"
+
+    def _open_menu(self, event):  # type: ignore[override]
+        try:
+            self._menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self._menu.grab_release()
+
+    def _copy_menu(self) -> None:
+        self.entry.event_generate("<<Copy>>")
+
+    def _cut_menu(self) -> None:
+        self.entry.event_generate("<<Cut>>")
+
+    def _paste_menu(self) -> None:
+        self.entry.event_generate("<<Paste>>")
