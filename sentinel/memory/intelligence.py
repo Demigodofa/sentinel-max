@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from sentinel.logging.logger import get_logger
@@ -29,7 +29,7 @@ class MemoryRanker:
             timestamp = datetime.fromisoformat(timestamp_str)
         except Exception:
             return 0.5
-        age_seconds = (datetime.utcnow() - timestamp).total_seconds()
+        age_seconds = (datetime.now(timezone.utc) - timestamp).total_seconds()
         return 1 / (1 + math.log1p(max(age_seconds, 0)))
 
     def _goal_match_score(self, metadata: Dict[str, Any], goal_type: str) -> float:
