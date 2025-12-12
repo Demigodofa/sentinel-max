@@ -35,9 +35,12 @@ class InputPanel(ttk.Frame):
         style.configure(
             "InputPanel.TEntry",
             foreground=colors["text"],
-            fieldbackground=colors["panel_bg"],
+            fieldbackground=colors["input_bg"],
+            background=colors["input_bg"],
             insertcolor=colors["accent"],
-            borderwidth=0,
+            bordercolor=colors["input_border"],
+            relief="flat",
+            padding=self.theme["spacing"]["pad_small"],
         )
 
     def _build_widgets(self, on_send: Callable[[str], None]) -> None:
@@ -68,24 +71,6 @@ class InputPanel(ttk.Frame):
 
 
     def _create_entry(self, fonts: dict, colors: dict) -> tk.Entry:
-=======
-        # Base styles
-
-        entry_config = {
-            "background": colors["panel_bg"],
-            "foreground": colors["text"],
-        }
-
-        # Only set insertbackground if the widget actually supports it (ttk on Windows does not).
-        if "insertbackground" in self.entry.keys():
-            entry_config["insertbackground"] = colors["accent"]
-
-        self.entry.configure(**entry_config)
-=======
-        self.entry.configure(background=colors["panel_bg"], foreground=colors["text"])
-
-        # Windows tkinter does not support -insertbackground on ttk.Entry
-
         try:
             return ttk.Entry(
                 self,
@@ -98,11 +83,14 @@ class InputPanel(ttk.Frame):
                 self,
                 textvariable=self.entry_var,
                 font=fonts["body"],
-                bg=colors["panel_bg"],
+                bg=colors["input_bg"],
                 fg=colors["text"],
                 insertbackground=colors["accent"],
                 relief="flat",
-                highlightthickness=0,
+                highlightthickness=1,
+                highlightcolor=colors["input_border"],
+                highlightbackground=colors["input_border"],
+                borderwidth=self.theme["border"]["width"],
             )
 
     def _handle_send(self, on_send: Callable[[str], None]) -> None:
@@ -118,6 +106,20 @@ class InputPanel(ttk.Frame):
             self.entry.bind(sequence, self._copy)
         for sequence in ("<Control-v>", "<Command-v>"):
             self.entry.bind(sequence, self._paste)
+        for sequence in ("<Control-x>", "<Command-x>"):
+            self.entry.bind(sequence, self._cut)
+
+        # Right-click context menu for mouse-driven clipboard interactions
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label="Cut", command=lambda: self._cut())
+        menu.add_command(label="Copy", command=lambda: self._copy())
+        menu.add_command(label="Paste", command=lambda: self._paste())
+
+        def show_menu(event: tk.Event) -> str:
+            menu.tk_popup(event.x_root, event.y_root)
+            return "break"
+
+        self.entry.bind("<Button-3>", show_menu)
 
     def _copy(self, event=None):  # type: ignore[override]
         try:
@@ -129,6 +131,13 @@ class InputPanel(ttk.Frame):
     def _paste(self, event=None):  # type: ignore[override]
         try:
             self.entry.event_generate("<<Paste>>")
+        except TclError:
+            return "break"
+        return "break"
+
+    def _cut(self, event=None):  # type: ignore[override]
+        try:
+            self.entry.event_generate("<<Cut>>")
         except TclError:
             return "break"
         return "break"
