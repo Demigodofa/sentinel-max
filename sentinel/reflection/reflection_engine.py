@@ -32,9 +32,14 @@ class ReflectionEngine:
             issues.append("simulation_warnings")
         if simulation_insights.get("predicted_failures"):
             issues.append("simulation_failures")
+        policy_outcomes = self._policy_outcomes(trace)
+        if policy_outcomes.get("blocked"):
+            issues.append("policy_blocked")
         suggestions = self._suggest_improvements(trace, issues, simulation_insights)
+        if policy_outcomes.get("suggested_fixes"):
+            suggestions.extend(policy_outcomes["suggested_fixes"])
         plan_adjustment = self._plan_adjustment(trace, issues)
-        summary = self._summarize(trace, issues, suggestions)
+        summary = self._summarize(trace, issues, suggestions, policy_outcomes)
         context = self._memory_context(goal) if goal else ""
         reflection = {
             "summary": summary,
@@ -46,6 +51,7 @@ class ReflectionEngine:
             "reflection_type": reflection_type,
             "confidence": self._confidence(trace, issues),
             "simulation": simulation_insights,
+            "policy_outcomes": policy_outcomes,
         }
         self._persist(reflection, reflection_type)
         decision = self.policy_engine.advise(issues)
@@ -86,8 +92,25 @@ class ReflectionEngine:
             return {"action": "none"}
         return {"action": "replan", "focus": issues}
 
-    def _summarize(self, trace: Any, issues: List[str], suggestions: List[str]) -> str:
-        return f"Trace results={len(getattr(trace, 'results', []))}, issues={issues}, suggestions={suggestions}"
+    def _summarize(
+        self,
+        trace: Any,
+        issues: List[str],
+        suggestions: List[str],
+        policy_outcomes: Dict[str, Any],
+    ) -> str:
+        blocked = policy_outcomes.get("blocked") or []
+        rewrites = policy_outcomes.get("rewrites") or []
+        policy_bits = []
+        if blocked:
+            policy_bits.append(f"blocked={len(blocked)}")
+        if rewrites:
+            policy_bits.append(f"rewrites={len(rewrites)}")
+        policy_summary = f" policy={' '.join(policy_bits)}" if policy_bits else ""
+        return (
+            f"Trace results={len(getattr(trace, 'results', []))}, issues={issues}, suggestions={suggestions}"\
+            f"{policy_summary}"
+        )
 
     def _confidence(self, trace: Any, issues: List[str]) -> float:
         base = 0.8
@@ -112,6 +135,28 @@ class ReflectionEngine:
             "warnings": warnings,
             "predicted_failures": predicted_failures,
             "slow_paths": slow_paths,
+        }
+
+    def _policy_outcomes(self, trace: Any) -> Dict[str, Any]:
+        blocked: List[Dict[str, Any]] = []
+        rewrites: List[Dict[str, Any]] = []
+        suggested_fixes: List[str] = []
+        for result in getattr(trace, "results", []) or []:
+            policy = getattr(result, "policy", None)
+            if not policy:
+                continue
+            if policy.rewrites:
+                rewrites.append({"task": result.node.id, "rewrites": policy.rewrites})
+            if not policy.allowed:
+                blocked.append({"task": result.node.id, "reasons": policy.reasons})
+                if policy.reasons:
+                    suggested_fixes.append(
+                        f"Adjust task {result.node.id} to satisfy policy: {', '.join(policy.reasons)}"
+                    )
+        return {
+            "blocked": blocked,
+            "rewrites": rewrites,
+            "suggested_fixes": suggested_fixes,
         }
 
     def _memory_context(self, goal: str) -> str:

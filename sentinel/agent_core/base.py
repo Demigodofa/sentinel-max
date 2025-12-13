@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from sentinel.planning.task_graph import TaskNode
     from sentinel.simulation.sandbox import SimulationResult
+    from sentinel.policy.policy_engine import PolicyResult
 
 
 @dataclass
@@ -64,6 +65,7 @@ class ExecutionResult:
     error: Optional[str] = None
     attempted_recovery: bool = False
     simulation: Optional["SimulationResult"] = None
+    policy: Optional["PolicyResult"] = None
 
 
 @dataclass
@@ -96,6 +98,10 @@ class ExecutionTrace:
             if res.simulation and res.simulation.warnings:
                 parts.append(
                     f"Simulated warnings for {res.node.id}: {', '.join(res.simulation.warnings)}"
+                )
+            if res.policy and not res.policy.allowed:
+                parts.append(
+                    f"Policy blocked {res.node.id}: {'; '.join(res.policy.reasons)}"
                 )
         batches_repr = (
             f" | batches={','.join('[' + ','.join(batch) + ']' for batch in self.batches)}"

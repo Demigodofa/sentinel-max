@@ -1,5 +1,7 @@
 import pytest
 
+import pytest
+
 from sentinel.policy.policy_engine import PolicyEngine
 from sentinel.planning.task_graph import TaskGraph, TaskNode
 from sentinel.tools.registry import ToolRegistry
@@ -32,11 +34,13 @@ def test_policy_enforces_metadata_and_parallel_limits():
         TaskNode("b", "", "nondet", produces=["y"], parallelizable=True),
     ]
     graph = TaskGraph(nodes)
-    engine = PolicyEngine()
+    engine = PolicyEngine(parallel_limit=1, deterministic_first=False)
 
-    engine.evaluate_plan(graph, registry)
+    result = engine.evaluate_plan(graph, registry, enforce=False)
 
     assert all(not node.parallelizable for node in graph)
+    assert result.allowed
+    assert "Parallel limit exceeded" in " ".join(result.rewrites)
 
 
 def test_policy_detects_artifact_collisions():
@@ -50,5 +54,8 @@ def test_policy_detects_artifact_collisions():
     )
     engine = PolicyEngine()
 
-    with pytest.raises(ValueError):
+    result = engine.evaluate_plan(graph, registry, enforce=False)
+    assert not result.allowed
+    assert any("Artifact collision" in reason for reason in result.reasons)
+    with pytest.raises(PermissionError):
         engine.evaluate_plan(graph, registry)

@@ -1,8 +1,7 @@
 """Policy engine governing planning and execution safety and preferences."""
 from __future__ import annotations
 
-from dataclasses import dataclass
-import json
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
@@ -22,13 +21,29 @@ class PolicyViolation(Exception):
 
 
 @dataclass
-class PolicyDecision:
+class PolicyResult:
+    """Structured response describing policy evaluation outcomes."""
+
     allowed: bool
-    reason: str
-    details: Optional[Dict[str, Any]] = None
+    reasons: List[str] = field(default_factory=list)
+    rewrites: List[str] = field(default_factory=list)
+    details: Dict[str, Any] = field(default_factory=dict)
+
+    def merge(self, other: "PolicyResult") -> "PolicyResult":
+        return PolicyResult(
+            allowed=self.allowed and other.allowed,
+            reasons=self.reasons + other.reasons,
+            rewrites=self.rewrites + other.rewrites,
+            details={**self.details, **other.details},
+        )
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"allowed": self.allowed, "reason": self.reason, "details": self.details or {}}
+        return {
+            "allowed": self.allowed,
+            "reasons": self.reasons,
+            "rewrites": self.rewrites,
+            "details": self.details,
+        }
 
 
 class PolicyEngine:
@@ -89,30 +104,47 @@ class PolicyEngine:
     # ------------------------------------------------------------------
     # Plan-time policies
     # ------------------------------------------------------------------
-    def evaluate_plan(self, graph: "TaskGraph", registry: ToolRegistry) -> None:
-        self._check_metadata(graph, registry)
-        self._enforce_parallel_limit(graph)
-        self._check_artifacts(graph)
+    def evaluate_plan(
+        self, graph: "TaskGraph", registry: ToolRegistry, enforce: bool = True
+    ) -> PolicyResult:
+        result = PolicyResult(allowed=True)
+        checks = [
+            self._check_metadata(graph, registry),
+            self._enforce_parallel_limit(graph),
+            self._check_artifacts(graph),
+        ]
+        for check in checks:
+            result = result.merge(check)
+        if enforce and not result.allowed:
+            reason = "; ".join(result.reasons) or "Plan blocked by policy"
+            raise PermissionError(reason)
+        return result
 
-    def _check_metadata(self, graph: TaskGraph, registry: ToolRegistry) -> None:
+    def _check_metadata(self, graph: TaskGraph, registry: ToolRegistry) -> PolicyResult:
+        result = PolicyResult(allowed=True)
         for node in graph:
             if node.tool is None:
                 continue
             schema = registry.get_schema(node.tool)
             if schema is None:
                 self._record_event("block", f"Tool metadata missing for {node.tool}")
-                raise PermissionError(f"Tool metadata missing for {node.tool}")
+                result.allowed = False
+                result.reasons.append(f"Tool metadata missing for {node.tool}")
+                continue
             if not set(schema.permissions).issubset(self.allowed_permissions):
                 self._record_event(
                     "block",
                     f"Permissions not allowed for {node.tool}",
                     {"permissions": schema.permissions},
                 )
-                raise PermissionError(f"Tool '{node.tool}' permissions not allowed")
+                result.allowed = False
+                result.reasons.append(f"Tool '{node.tool}' permissions not allowed")
             if self.deterministic_first and not schema.deterministic:
                 node.parallelizable = False
+        return result
 
-    def _enforce_parallel_limit(self, graph: TaskGraph) -> None:
+    def _enforce_parallel_limit(self, graph: TaskGraph) -> PolicyResult:
+        result = PolicyResult(allowed=True)
         parallel_count = sum(1 for node in graph if node.parallelizable)
         if parallel_count > self.parallel_limit:
             self._record_event(
@@ -122,52 +154,81 @@ class PolicyEngine:
             )
             for node in graph:
                 node.parallelizable = False
+            result.rewrites.append("Parallel limit exceeded; tasks serialized")
+        return result
 
-    def _check_artifacts(self, graph: TaskGraph) -> None:
+    def _check_artifacts(self, graph: TaskGraph) -> PolicyResult:
+        result = PolicyResult(allowed=True)
         produced: Set[str] = set()
         for node in graph:
             overlap = produced.intersection(set(node.produces))
             if overlap:
-                self._record_event("block", f"Artifact collision detected: {', '.join(overlap)}")
-                raise ValueError(f"Artifact collision detected: {', '.join(overlap)}")
+                message = f"Artifact collision detected: {', '.join(overlap)}"
+                self._record_event("block", message)
+                result.allowed = False
+                result.reasons.append(message)
             produced.update(node.produces)
+        return result
 
     # ------------------------------------------------------------------
     # Execution-time policies
     # ------------------------------------------------------------------
-    def check_execution_allowed(self, tool_name: str) -> None:
+    def check_execution_allowed(self, tool_name: str, enforce: bool = True) -> PolicyResult:
+        result = PolicyResult(allowed=True)
         if self.real_tool_allowlist is not None and tool_name not in self.real_tool_allowlist:
-            self._record_event("block", f"Tool {tool_name} not allowed for real execution")
-            raise PermissionError(f"Real execution not permitted for tool {tool_name}")
+            message = f"Tool {tool_name} not allowed for real execution"
+            self._record_event("block", message)
+            result.allowed = False
+            result.reasons.append(message)
+        if enforce and not result.allowed:
+            raise PermissionError("; ".join(result.reasons))
+        return result
 
-    def check_runtime_limits(self, context: Dict[str, Any]) -> None:
+    def check_runtime_limits(self, context: Dict[str, Any], enforce: bool = True) -> PolicyResult:
+        result = PolicyResult(allowed=True)
         elapsed = context.get("elapsed")
         cycles = context.get("cycles", 0)
         consecutive_failures = context.get("consecutive_failures", 0)
         if self.max_execution_time is not None and elapsed is not None and elapsed > self.max_execution_time:
             self._record_event("block", "Max execution time exceeded", {"elapsed": elapsed})
-            raise TimeoutError("Execution time limit reached")
+            result.allowed = False
+            result.reasons.append("Max execution time exceeded")
         if self.max_cycles is not None and cycles >= self.max_cycles:
             self._record_event("block", "Max cycles reached", {"cycles": cycles})
-            raise RuntimeError("Execution cycle limit reached")
+            result.allowed = False
+            result.reasons.append("Max cycles reached")
         if self.max_consecutive_failures is not None and consecutive_failures > self.max_consecutive_failures:
             self._record_event(
                 "block",
                 "Consecutive failure limit exceeded",
                 {"consecutive_failures": consecutive_failures},
             )
-            raise RuntimeError("Too many consecutive tool failures")
+            result.allowed = False
+            result.reasons.append("Consecutive failure limit exceeded")
+        if enforce and not result.allowed:
+            raise RuntimeError("; ".join(result.reasons))
+        return result
 
-    def validate_execution(self, node: "TaskNode", registry: ToolRegistry) -> None:
+    def validate_execution(
+        self, node: "TaskNode", registry: ToolRegistry, enforce: bool = True
+    ) -> PolicyResult:
         if node.tool is None:
-            return
+            return PolicyResult(allowed=True)
         schema = registry.get_schema(node.tool)
         if schema is None:
-            raise PermissionError(f"Cannot execute tool {node.tool} without metadata")
+            result = PolicyResult(False, [f"Cannot execute tool {node.tool} without metadata"])
+            if enforce:
+                raise PermissionError(result.reasons[0])
+            return result
         dangerous_args = [arg for arg in node.args.values() if isinstance(arg, str) and self._is_dangerous(arg)]
         if dangerous_args:
-            self._record_event("block", f"Unsafe arguments for {node.id}", {"args": dangerous_args})
-            raise PermissionError(f"Unsafe arguments detected for task {node.id}")
+            message = f"Unsafe arguments for {node.id}"
+            self._record_event("block", message, {"args": dangerous_args})
+            result = PolicyResult(False, [message], details={"args": dangerous_args})
+            if enforce:
+                raise PermissionError(f"Unsafe arguments detected for task {node.id}")
+            return result
+        return PolicyResult(allowed=True)
 
     def _is_dangerous(self, value: str) -> bool:
         forbidden = ["subprocess", "os.system", "rm -rf", "../", "\\..\\"]
@@ -176,25 +237,39 @@ class PolicyEngine:
     # ------------------------------------------------------------------
     # Reflection-time policies
     # ------------------------------------------------------------------
-    def advise(self, issues: List[str]) -> PolicyDecision:
+    def advise(self, issues: List[str]) -> PolicyResult:
         if not issues:
-            return PolicyDecision(True, "no issues")
-        return PolicyDecision(False, "issues_detected", {"issues": issues})
+            return PolicyResult(True, reasons=["no issues"])
+        return PolicyResult(False, reasons=["issues_detected"], details={"issues": issues})
 
     # ------------------------------------------------------------------
     # Research-time policies
     # ------------------------------------------------------------------
-    def check_research_limits(self, query, depth):
+    def check_research_limits(self, query, depth, enforce: bool = True) -> PolicyResult:
+        result = PolicyResult(allowed=True)
         if depth > self.max_research_depth:
             self._record_event("block", "Research depth exceeded", {"depth": depth})
-            raise PermissionError("Requested research depth exceeds policy limits")
+            result.allowed = False
+            result.reasons.append("Research depth exceeded")
         if not str(query).strip():
-            raise ValueError("Query must be non-empty for research")
-        self._record_event("allow", "Research limits validated", {"depth": depth, "query": query})
+            if enforce:
+                raise ValueError("Query must be non-empty for research")
+            result.allowed = False
+            result.reasons.append("Query must be non-empty for research")
+        if result.allowed:
+            self._record_event("allow", "Research limits validated", {"depth": depth, "query": query})
+        if enforce and not result.allowed:
+            raise PermissionError("; ".join(result.reasons))
+        return result
 
-    def validate_semantic_updates(self, semantic_profiles):
+    def validate_semantic_updates(self, semantic_profiles, enforce: bool = True) -> PolicyResult:
+        result = PolicyResult(allowed=True)
         if not isinstance(semantic_profiles, dict):
-            raise ValueError("Semantic profiles must be a dictionary")
+            if enforce:
+                raise ValueError("Semantic profiles must be a dictionary")
+            result.allowed = False
+            result.reasons.append("Semantic profiles must be a dictionary")
+            return result
         disallowed = [name for name in semantic_profiles if ":" in name and name.split(":")[0] not in self.approved_domains]
         if disallowed:
             self._record_event(
@@ -202,12 +277,17 @@ class PolicyEngine:
                 "Semantic update domain not approved",
                 {"tools": disallowed},
             )
-            raise PermissionError("Semantic updates from unapproved domain")
-        self._record_event(
-            "allow",
-            "Semantic profiles validated",
-            {"count": len(semantic_profiles)},
-        )
+            result.allowed = False
+            result.reasons.append("Semantic update domain not approved")
+        else:
+            self._record_event(
+                "allow",
+                "Semantic profiles validated",
+                {"count": len(semantic_profiles)},
+            )
+        if enforce and not result.allowed:
+            raise PermissionError("; ".join(result.reasons))
+        return result
 
     # ------------------------------------------------------------------
     # Utilities
