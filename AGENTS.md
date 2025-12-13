@@ -89,3 +89,5 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - AdaptivePlanner, PolicyEngine, Memory Intelligence, and ReflectionEngine integrated across controller, planner, worker, and autonomy loop.
 - System spec updated to include policy, memory intelligence pipelines, and new namespaces.
 - Added sandbox walkthrough documentation for exercising CLI, autonomy, policy, memory, tool coverage, GUI/server expectations, and prioritized fixes.
+- Expanded the sandbox walkthrough with conversational coverage and dead-path detection guidance so every pipeline stage can be verified end-to-end.
+
