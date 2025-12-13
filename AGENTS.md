@@ -43,7 +43,7 @@ This document is the living system specification for Sentinel MAX. It summarizes
 
 ### Tools
 - **ToolRegistry**: Thread-safe registry enforcing unique, typed Tool instances with schemas and permissions; dynamic loading supported.
-- **Default tools**: deterministic web search, internet extractor, static code analyzer, microservice builder, browser agent, configurable echo tool.
+- **Default tools**: deterministic web search, deterministic internet extractor, static code analyzer, microservice builder, browser agent, configurable echo tool. External web tools write provenance to the evidence store (`memory/external_sources`), and evidence content can be reloaded later via `MemoryManager.load_external_source(<key>)`.
 - **Safety**: Sandbox + policy enforcement ensure no execution with missing metadata or unsafe arguments.
 
 ### Interfaces
@@ -66,6 +66,7 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - Recent recall returns newest records; semantic search ranks by cosine similarity (hash-based fallback when model missing).
 - Execution steps, reflections, policy events, and planning traces automatically recorded.
 - Context/rank reports stored under `memory_contexts`/`memory_rank_reports`.
+- External evidence (search results, scraped pages, provenance metadata) is persisted under `memory/external_sources` with content files stored alongside symbolic entries for later recall; use `MemoryManager.load_external_source(<key>)` to reopen the saved content by key in later runs.
 
 ## Safety and Policy Rules
 - Sandbox restricts Python built-ins; PolicyEngine blocks missing tool metadata, disallowed permissions, unsafe arguments, and excessive parallelism.

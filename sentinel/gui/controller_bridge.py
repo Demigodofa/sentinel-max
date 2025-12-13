@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Callable, Iterable, List, Optional
 
 from sentinel.agent_core.base import PlanStep
+from sentinel.conversation import MessageDTO
 from sentinel.controller import SentinelController
 
 PlanUpdateCallback = Callable[[List[PlanStep]], None]
@@ -61,7 +62,8 @@ class ControllerBridge:
     # ------------------------------------------------------------------
     def _process_input(self, text: str) -> None:
         with self._lock:
-            response = self.controller.process_input(text)
+            dto = MessageDTO(text=text, mode="gui")
+            response = self.controller.process_input(dto)
         if self.on_agent_response:
             self.on_agent_response(response)
         self._emit_plan_update()

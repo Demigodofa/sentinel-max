@@ -49,7 +49,15 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 
 4. **Storage defaults (F:\\Sandbox)**
 
-   The sandbox root defaults to `F:\\Sandbox` (configurable via `SENTINEL_SANDBOX_ROOT`), and both symbolic + vector memories now persist under `memory/` in that sandbox. Override with `SENTINEL_STORAGE_DIR` if you need a different memory location.
+   The sandbox root defaults to `F:\\Sandbox` (configurable via `SENTINEL_SANDBOX_ROOT`), and both symbolic + vector memories now persist under `memory/` in that sandbox. Override with `SENTINEL_STORAGE_DIR` if you need a different memory location. External evidence (search queries, fetched pages, provenance metadata) is written to `memory/external_sources` alongside the stores for later retrieval; call `MemoryManager.load_external_source(<key>)` to read the persisted content and metadata in later sessions.
+
+## Tool summary
+
+Default tools registered at controller startup and run through the sandbox:
+
+- `web_search` (deterministic): DuckDuckGo HTML search with results logged to `memory/external_sources` for provenance.
+- `internet_extract` (deterministic): Scrapes, cleans, summarizes, and stores content; evidence and cleaned HTML are persisted to `memory/external_sources` and vector memory.
+- Filesystem tools (`fs_list`, `fs_read`, `fs_write`, `fs_delete`), `sandbox_exec`, `code_analyzer`, `microservice_builder`, `browser_agent`, and the generated `echo` tool all retain the existing safety and policy checks.
 
 ## Sandbox walkthrough
 Want to exercise every major capability in a single session? Follow [docs/sandbox_walkthrough.md](docs/sandbox_walkthrough.md) for a start-to-finish checklist that covers CLI planning/execution, autonomy gating, policy visibility, memory recall, tool coverage (including web/code/microservice/browser agents), GUI/server expectations, and prioritized follow-up fixes. The guide now includes a coverage matrix and dead-path detection tips so you can confirm conversational commands route correctly and that no part of the pipeline sits idle.
@@ -109,6 +117,7 @@ print(engine.dependency_issues(project["project_id"]))
 ### Safety & Governance
 
 - **PolicyEngine** guards project limits (goals, dependency depth, duration, refinement rounds) and blocks forbidden actions.
+- **Structured policy outcomes**: Policy decisions now return an allow/block record with reasons and rewrites that flow into reflections and final responses for guided replanning.
 - **ProjectDependencyGraph** validates cycles, unresolved nodes, and computes depth before plans are persisted.
 - **ProjectMemory** provides atomic, versioned persistence with schema validation for goals, plans, histories, and reflections.
 - **DialogManager** surfaces overviews, progress, dependency issues, and milestones for human operators.
@@ -126,10 +135,11 @@ print(engine.dependency_issues(project["project_id"]))
 
 ## Operations
 
-- **Policy visibility**: Policy events are persisted to memory (when configured) for auditability.
+- **Policy visibility**: Policy events are persisted as structured facts with mirrored text entries in `policy_events` (when configured) for auditability.
 - **Sandbox execution**: Tools run inside a restricted sandbox via the worker and topological executor.
-- **Autonomy guardrails**: Time, cycle, and refinement limits enforced before each loop iteration. Use `/auto until done` to keep autonomy running without timing out; `/auto on|off` toggles bounded runs.
+- **Autonomy guardrails**: Time, cycle, and refinement limits enforced before each loop iteration with per-cycle metadata persisted for review. Use `/auto until done` to keep autonomy running without timing out; `/auto on|off` toggles bounded runs.
 - **Reflection**: Structured reflections stored under typed namespaces support replanning and transparency.
+- **Tool gaps**: When planning cannot map a subgoal to a registered tool, a tool-gap request is persisted to `plans` and `policy_events` so follow-up tooling can be generated with sandbox context.
 
 ## Self-augmentation feedback
 
