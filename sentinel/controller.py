@@ -90,8 +90,8 @@ class SentinelController:
             self.execution_controller,
             self.reflector,
             self.memory,
-            cycle_limit=3,
-            timeout=5.0,
+            cycle_limit=5,
+            timeout=None,
         )
 
         self.conversation_controller = ConversationController(

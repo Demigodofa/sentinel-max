@@ -293,6 +293,7 @@ class ConversationController:
                 "  /auto on|off        toggle auto-execution mode\n"
                 "  /auto <turns>       enable bounded autonomy for N turns (default 1h timer)\n"
                 "  /auto <duration>    enable bounded autonomy for a duration (e.g., 30m, 1h)\n"
+                "  /auto until done    run autonomously without turn/time limits (manual stop)\n"
                 "  /auto <task>        one-shot: plan+execute <task>\n"
                 "  /run                execute the last proposed plan\n"
             )
@@ -394,6 +395,25 @@ class ConversationController:
         if lower.startswith("/auto "):
             remainder = text[len("/auto ") :].strip()
             turns, ttl = self._parse_auto_budget(remainder)
+            if turns is None and ttl is None and remainder.lower() in {
+                "until done",
+                "until complete",
+                "until finished",
+                "no limit",
+                "forever",
+            }:
+                self._arm_auto_mode(turns=None, ttl_seconds=None)
+                response = self.dialog_manager.format_agent_response(
+                    "Auto mode enabled until manually stopped. I'll keep running plans without timing out."
+                )
+                self.dialog_manager.record_turn(text, response, context=session_context)
+                return {
+                    "response": response,
+                    "normalized_goal": None,
+                    "task_graph": None,
+                    "trace": None,
+                    "dialog_context": session_context,
+                }
             if turns is not None or ttl is not None:
                 ttl_seconds = ttl or 3600
                 self._arm_auto_mode(turns=turns, ttl_seconds=ttl_seconds)
@@ -488,6 +508,8 @@ class ConversationController:
         lowered = text.lower().strip()
         if not lowered:
             return (None, None)
+        if lowered in {"until done", "until complete", "until finished", "no limit", "forever"}:
+            return (None, None)
         match_hours = re.search(r"(\d+)\s*(h|hr|hrs|hour|hours)", lowered)
         if match_hours:
             return (None, int(match_hours.group(1)) * 3600)
@@ -532,7 +554,7 @@ class ConversationController:
         task_graph = self.nl_to_taskgraph.translate(normalized_goal)
         enriched_graph = self.multi_agent_engine.coordinate(task_graph)
         trace = self._execute_graph(normalized_goal, enriched_graph)
-        response = self._final_response(trace, normalized_goal)
+        response = self._final_response(trace, normalized_goal, enriched_graph)
         self.dialog_manager.record_turn(
             user_input,
             response,
@@ -643,12 +665,40 @@ class ConversationController:
         trace = self.autonomy.run_graph(task_graph, goal_text)
         return trace
 
-    def _final_response(self, trace: ExecutionTrace, normalized_goal: NormalizedGoal) -> str:
+    def _final_response(
+        self, trace: ExecutionTrace, normalized_goal: NormalizedGoal, task_graph
+    ) -> str:
         if trace.failed_nodes:
             issues = "; ".join(res.error or "unknown failure" for res in trace.failed_nodes)
             base = f"Tasks executed with failures: {issues}."
         else:
             base = "Tasks executed successfully with constraints validated."
+
+        suggestions: list[str] = []
+        metadata = getattr(task_graph, "metadata", {}) if task_graph else {}
+        if isinstance(metadata, dict):
+            critic = metadata.get("critic_suggestions") or []
+            if critic:
+                suggestions.extend([f"Critic: {item}" for item in critic])
+            optimizations = metadata.get("optimizations") or []
+            if optimizations:
+                suggestions.extend([f"Optimizer: {item}" for item in optimizations])
+            tool_gap = metadata.get("tool_gap")
+            if tool_gap:
+                suggestions.append(f"Tool gap detected: {tool_gap}. I can auto-generate an agent/tool to cover it.")
+            generated_tool = metadata.get("generated_tool") if isinstance(metadata.get("generated_tool"), dict) else None
+            if generated_tool:
+                suggestions.append(
+                    f"Proposed new agent/tool '{generated_tool.get('name', 'candidate')}' to self-augment the registry."
+                )
+        if suggestions:
+            self.memory.store_fact(
+                "autonomy_suggestions",
+                key=None,
+                value={"goal": normalized_goal.as_goal_statement(), "suggestions": suggestions},
+                metadata={"source": "conversation_controller"},
+            )
+            base = f"{base} Suggestions: {'; '.join(suggestions)}."
         if normalized_goal.preferences:
             base = f"{base} Persona: {', '.join(normalized_goal.preferences)}."
         return self.dialog_manager.format_agent_response(base)
