@@ -94,5 +94,7 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - Fixed `SentinelController` tool registration indentation so default tools load at startup, restoring task execution end-to-end.
 - Direct `/tool` invocations now execute through the sandbox (or registry fallback) so filesystem/web/sandbox tools run for real, enabling GUI and CLI parity.
 - Task graphs are mirrored into `plans` with simplified steps so the GUI plan panel renders current work instead of “No plan available.”
+- Reflection-driven autonomy now injects issues and plan adjustments back into the planner, triggers replans after failures, and persists versioned plan snapshots so the latest DAG is always visible via CLI/GUI.
+- Autonomy cycles now capture per-iteration metadata (duration, failure signals, reflection inputs, and plan versions) while enforcing failure/time limits to prevent runaway loops.
 
 

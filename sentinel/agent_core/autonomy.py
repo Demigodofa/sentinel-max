@@ -81,25 +81,55 @@ class AutonomyLoop:
         """Execute a taskgraph using the execution controller then reflect."""
 
         self._running = True
-        goal = None
-        graph = taskgraph
+        loop_start = time.time()
+        goal = taskgraph if isinstance(taskgraph, str) else None
+        graph = None
         if isinstance(taskgraph, str):
-            goal = taskgraph
             graph = self.planner.plan(taskgraph, reflection=self.last_reflection)
-        elif hasattr(graph, "metadata"):
+        else:
+            graph = taskgraph
+        if hasattr(graph, "metadata") and not goal:
             goal = graph.metadata.get("origin_goal") if isinstance(graph.metadata, dict) else None
 
-        trace = self.execution_controller.request_execution(graph, execution_mode, parameters or {})
-        self.memory.store_text(
-            trace.summary(),
-            namespace="execution.real_trace",
-            metadata={"mode": execution_mode.value, "goal": goal},
-        )
-        reflection = self._record_reflection(trace, "operational", execution_mode.value, goal)
-        if reflection:
-            self.last_reflection = reflection
+        trace: ExecutionTrace | None = None
+        cycles = 0
+        failed_cycles = 0
+        while self._running:
+            cycle_start = time.time()
+            trace = self.execution_controller.request_execution(graph, execution_mode, parameters or {})
+            self.memory.store_text(
+                trace.summary(),
+                namespace="execution.real_trace",
+                metadata={"mode": execution_mode.value, "goal": goal, "cycle": cycles},
+            )
+            reflection = self._record_reflection(trace, "operational", execution_mode.value, goal)
+            if reflection:
+                self.last_reflection = reflection
+            replan_requested = self._should_replan(reflection, trace)
+            self._record_cycle_metadata(
+                goal=goal,
+                cycle=cycles,
+                duration=time.time() - cycle_start,
+                trace=trace,
+                reflection=reflection,
+                graph=graph,
+                replan_requested=replan_requested,
+            )
+            if not replan_requested:
+                break
+            failed_cycles += 1 if trace.failed_nodes else 0
+            cycles += 1
+            if self.timeout and (time.time() - loop_start) >= self.timeout:
+                break
+            if self.max_failed_cycles and failed_cycles >= self.max_failed_cycles:
+                break
+            if self.cycle_limit and cycles >= self.cycle_limit:
+                break
+            if not goal:
+                break
+            graph = self.planner.replan(goal, reflection or {})
         self.stop()
-        return trace
+        return trace or ExecutionTrace()
 
     def run_graph(
         self,
@@ -151,9 +181,50 @@ class AutonomyLoop:
             log.warning("AutonomyLoop: failed to record reflection: %s", exc)
             return None
 
+    def _should_replan(self, reflection: Optional[Dict[str, Any]], trace: ExecutionTrace) -> bool:
+        if not self._running:
+            return False
+        if reflection:
+            plan_adjustment = reflection.get("plan_adjustment") or {}
+            if plan_adjustment.get("action") == "replan":
+                return True
+        if trace.failed_nodes:
+            return True
+        return False
+
     def _update_goal(self, goal: str, trace: ExecutionTrace) -> str:
         errors = [res.error for res in trace.failed_nodes if res.error]
         if errors:
             return f"Retry after failure: {goal}. Issues: {'; '.join(errors[:2])}"
         return goal
+
+    def _record_cycle_metadata(
+        self,
+        goal: str | None,
+        cycle: int,
+        duration: float,
+        trace: ExecutionTrace,
+        reflection: Dict[str, Any] | None,
+        graph: TaskGraph | None,
+        replan_requested: bool,
+    ) -> None:
+        try:
+            failed_nodes = []
+            for res in trace.failed_nodes:
+                node = getattr(res, "node", None)
+                failed_nodes.append(getattr(node, "id", None) or "unknown")
+
+            payload = {
+                "goal": goal,
+                "cycle": cycle,
+                "duration_sec": round(duration, 3),
+                "failed_nodes": failed_nodes,
+                "replan_requested": replan_requested,
+                "plan_version": getattr(graph, "metadata", {}).get("plan_version") if graph else None,
+                "reflection_issues": (reflection or {}).get("issues_detected", []),
+                "plan_adjustment": (reflection or {}).get("plan_adjustment", {}),
+            }
+            self.memory.store_fact("autonomy.cycles", key=None, value=payload)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            log.warning("AutonomyLoop: failed to record cycle metadata: %s", exc)
 
