@@ -18,7 +18,8 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 - **Memory queries**: Symbolic lookups now return the most recent records first within each namespace so the latest goals, plans, and reflections remain visible even when older test data persists on disk.
 - **Default tools**: Filesystem list/read/write/delete, sandboxed exec, deterministic web search, internet extractor, code analyzer, microservice builder, browser agent, and a configurable echo tool registered at startup.
 - **Direct tool execution**: `/tool <name> <json>` now runs the requested tool through the sandbox when available (with a registry fallback), so filesystem, sandbox exec, and web search tools execute for real rather than being simulated.
-- **Plan publication for GUI**: Executed task graphs are mirrored into simplified plan records under the `plans` namespace, enabling the GUI plan panel to render current steps instead of showing “No plan available.”
+- **Plan publication for GUI**: Executed task graphs are mirrored into simplified, versioned plan records under the `plans` namespace so the GUI plan panel always renders the latest steps instead of showing “No plan available.”
+- **Autonomy-aware replanning**: Reflection outputs (issues + plan adjustments) feed the planner during autonomous runs, triggering replans after failures and persisting revised DAGs with incremented versions for CLI/GUI display. Each autonomy cycle is also recorded with duration, reflection signals, and plan versions so runaway loops can be stopped by failure or timeout guards.
 
 ## Quickstart
 
@@ -129,7 +130,7 @@ print(engine.dependency_issues(project["project_id"]))
 
 - **Policy visibility**: Policy events are persisted as structured facts with mirrored text entries in `policy_events` (when configured) for auditability.
 - **Sandbox execution**: Tools run inside a restricted sandbox via the worker and topological executor.
-- **Autonomy guardrails**: Time, cycle, and refinement limits enforced before each loop iteration. Use `/auto until done` to keep autonomy running without timing out; `/auto on|off` toggles bounded runs.
+- **Autonomy guardrails**: Time, cycle, and refinement limits enforced before each loop iteration with per-cycle metadata persisted for review. Use `/auto until done` to keep autonomy running without timing out; `/auto on|off` toggles bounded runs.
 - **Reflection**: Structured reflections stored under typed namespaces support replanning and transparency.
 - **Tool gaps**: When planning cannot map a subgoal to a registered tool, a tool-gap request is persisted to `plans` and `policy_events` so follow-up tooling can be generated with sandbox context.
 

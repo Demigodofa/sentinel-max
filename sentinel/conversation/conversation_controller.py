@@ -700,16 +700,10 @@ class ConversationController:
                     "title": getattr(node, "title", "")
                     or getattr(node, "action", "")
                     or getattr(node, "tool", ""),
-                    "depends_on": getattr(node, "depends_on", []) or [],
+                    "depends_on": getattr(node, "depends_on", []) or getattr(node, "requires", []) or [],
                 }
             )
-
-        self.memory.store_fact(
-            "plans",
-            key=None,
-            value={"goal": goal_text, "steps": steps},
-            metadata={"domain": normalized_goal.domain},
-        )
+        self.planner.record_plan_snapshot(goal_text, steps, metadata={"domain": normalized_goal.domain})
         trace = self.autonomy.run_graph(task_graph, goal_text)
         return trace
 
