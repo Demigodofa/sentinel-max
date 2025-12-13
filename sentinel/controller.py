@@ -1,4 +1,4 @@
-﻿"""Sentinel MAX controller orchestrating Agent Core components."""
+"""Sentinel MAX controller orchestrating Agent Core components."""
 from __future__ import annotations
 
 import json
