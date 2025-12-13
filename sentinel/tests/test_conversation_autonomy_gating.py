@@ -5,7 +5,9 @@ import pytest
 from sentinel.agent_core.base import ExecutionTrace
 from sentinel.conversation.conversation_controller import ConversationController
 from sentinel.conversation.dialog_manager import DialogManager
+
 from sentinel.conversation.intent_engine import NormalizedGoal
+from sentinel.conversation.message_dto import MessageDTO
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.planning.task_graph import TaskGraph, TaskNode
 from sentinel.tools.registry import ToolRegistry
@@ -62,7 +64,7 @@ def normalized_goal():
 def test_greeting_stays_conversational(normalized_goal):
     controller, intent_engine, nl_to_taskgraph, autonomy, multi_agent_engine = build_controller(normalized_goal)
 
-    result = controller.handle_input("hello")
+    result = controller.handle_input(MessageDTO(text="hello", mode="test"))
 
     intent_engine.run.assert_not_called()
     nl_to_taskgraph.translate.assert_not_called()
@@ -74,7 +76,7 @@ def test_greeting_stays_conversational(normalized_goal):
 def test_task_request_proposes_plan_only(normalized_goal):
     controller, intent_engine, nl_to_taskgraph, autonomy, multi_agent_engine = build_controller(normalized_goal)
 
-    result = controller.handle_input("build a script to rename files")
+    result = controller.handle_input(MessageDTO(text="build a script to rename files", mode="test"))
 
     intent_engine.run.assert_called_once()
     nl_to_taskgraph.translate.assert_not_called()
@@ -92,8 +94,8 @@ def test_plan_executes_after_user_approval(normalized_goal):
     multi_agent_engine.coordinate.return_value = graph
     autonomy.run_graph.return_value = ExecutionTrace()
 
-    controller.handle_input("build a script to rename files")
-    result = controller.handle_input("y")
+    controller.handle_input(MessageDTO(text="build a script to rename files", mode="test"))
+    result = controller.handle_input(MessageDTO(text="y", mode="test"))
 
     nl_to_taskgraph.translate.assert_called_once()
     multi_agent_engine.coordinate.assert_called_once()
@@ -110,7 +112,7 @@ def test_autonomy_trigger_executes(normalized_goal):
     multi_agent_engine.coordinate.return_value = graph
     autonomy.run_graph.return_value = ExecutionTrace()
 
-    result = controller.handle_input("/auto build a script to rename files")
+    result = controller.handle_input(MessageDTO(text="/auto build a script to rename files", mode="test"))
 
     intent_engine.run.assert_called_once()
     nl_to_taskgraph.translate.assert_called_once()
@@ -127,8 +129,8 @@ def test_auto_mode_runs_without_prompt(normalized_goal):
     multi_agent_engine.coordinate.return_value = graph
     autonomy.run_graph.return_value = ExecutionTrace()
 
-    controller.handle_input("/auto on")
-    result = controller.handle_input("build a script to rename files")
+    controller.handle_input(MessageDTO(text="/auto on", mode="test"))
+    result = controller.handle_input(MessageDTO(text="build a script to rename files", mode="test"))
 
     assert controller.auto_mode_enabled is True
     intent_engine.run.assert_called_once()
@@ -148,11 +150,11 @@ def test_auto_turn_budget_stops_after_limit(normalized_goal):
 
     controller._arm_auto_mode(turns=1, ttl_seconds=3600)
 
-    first = controller.handle_input("build a script to rename files")
+    first = controller.handle_input(MessageDTO(text="build a script to rename files", mode="test"))
     assert "Tasks executed" in first["response"]
     assert autonomy.run_graph.call_count == 1
 
-    second = controller.handle_input("build another script")
+    second = controller.handle_input(MessageDTO(text="build another script", mode="test"))
     assert "Execute?" in second["response"]
     assert autonomy.run_graph.call_count == 1
     assert controller.auto_mode_enabled is False
