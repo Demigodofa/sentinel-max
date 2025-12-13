@@ -13,6 +13,7 @@ from uuid import uuid4
 from sentinel.memory.symbolic_memory import SymbolicMemory
 from sentinel.memory.vector_memory import VectorMemory
 from sentinel.logging.logger import get_logger
+from sentinel.config.sandbox_config import ensure_sandbox_root_exists
 
 logger = get_logger(__name__)
 
@@ -34,10 +35,14 @@ class MemoryManager:
         embedding_model: Optional[str] = None,
     ) -> None:
         storage_root = storage_dir or os.environ.get("SENTINEL_STORAGE_DIR")
-        base_dir = Path(storage_root) if storage_root else Path(__file__).resolve().parent
+        if storage_root:
+            base_dir = Path(storage_root)
+        else:
+            base_dir = ensure_sandbox_root_exists() / "memory"
+        base_dir = base_dir.expanduser().resolve()
         base_dir.mkdir(parents=True, exist_ok=True)
         self.symbolic = SymbolicMemory(base_dir / "symbolic_store.json")
-        self.vector = VectorMemory(model_name=embedding_model)
+        self.vector = VectorMemory(model_name=embedding_model, storage_path=base_dir / "vector_store.json")
         self._lock = RLock()
 
     # ------------------------------------------------------------------

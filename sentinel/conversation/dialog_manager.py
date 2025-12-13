@@ -5,7 +5,11 @@ from collections import deque
 from typing import Deque, Dict, List, Optional
 
 from sentinel.conversation.intent_engine import NormalizedGoal
-from sentinel.llm.client import ChatMessage, LLMClient, DEFAULT_SYSTEM_PROMPT
+from sentinel.llm.client import (
+    ChatMessage,
+    LLMClient,
+    build_system_prompt,
+)
 
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
@@ -140,10 +144,17 @@ class DialogManager:
     # Safe fallbacks
     # ------------------------------------------------------------------
     def respond_conversationally(self, text: str) -> str:
-        reply = self._llm.chat(
-            [ChatMessage("system", DEFAULT_SYSTEM_PROMPT), ChatMessage("user", text)],
-            max_tokens=400,
-        )
+        msgs = [ChatMessage("system", build_system_prompt())]
+
+        # inject last few turns as chat history
+        for t in list(self.multi_turn_context)[-8:]:
+            msgs.append(ChatMessage("user", t["user"]))
+            msgs.append(ChatMessage("assistant", t["agent"]))
+
+        msgs.append(ChatMessage("user", text))
+
+        reply = self._llm.chat(msgs, max_tokens=900)
+
         if reply and reply.strip():
             return self.format_agent_response(reply.strip())
         return "I hear you. What would you like to work on?"
@@ -154,18 +165,22 @@ class DialogManager:
     def propose_plan(self, goal) -> str:
         reply = self._llm.chat(
             [
-                ChatMessage("system", DEFAULT_SYSTEM_PROMPT),
+                ChatMessage("system", build_system_prompt()),
                 ChatMessage(
                     "user",
                     "Write a short execution plan (3-6 steps) for this task. "
-                    "Assume tools may exist for web_search, internet_extract, code_analyzer. "
+                    "Assume tools may exist for web_search, internet_extract, fs_read, fs_write, fs_list, fs_delete, "
+                    "sandbox_exec, browser_agent, and code_analyzer. "
+                    "Prefer explicit web + file-save steps when the user wants information gathered and stored. "
                     "Be concise.\n\nTASK:\n" + str(goal),
                 ),
             ],
             max_tokens=300,
         )
-        if reply and reply.strip():
-            return self.format_agent_response(reply.strip())
+        if reply:
+            stripped = reply.strip()
+            if stripped and not stripped.lower().startswith(("llm backend is disabled", "llm request failed")):
+                return self.format_agent_response(stripped)
         return self.format_agent_response(
             "I can plan this:\n" f"{goal}\n\n" "Execute? (y/n) — or say `/auto` to run automatically."
         )

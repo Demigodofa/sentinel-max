@@ -90,8 +90,8 @@ class SentinelController:
             self.execution_controller,
             self.reflector,
             self.memory,
-            cycle_limit=3,
-            timeout=5.0,
+            cycle_limit=5,
+            timeout=None,
         )
 
         self.conversation_controller = ConversationController(
@@ -110,20 +110,32 @@ class SentinelController:
         self.hot_reloader = HotReloader()
 
     def _register_default_tools(self) -> None:
+        def safe_register(tool) -> None:
+            if self.tool_registry.has_tool(tool.name):
+                return
+            self.tool_registry.register(tool)
+
         # Hard-sandboxed filesystem + exec + web search
-        self.tool_registry.register(FSListTool())
-        self.tool_registry.register(FSReadTool())
-        self.tool_registry.register(FSWriteTool())
-        self.tool_registry.register(FSDeleteTool())
-        self.tool_registry.register(SandboxExecTool())
+        safe_register(FSListTool())
+        safe_register(FSReadTool())
+        safe_register(FSWriteTool())
+        safe_register(FSDeleteTool())
+        safe_register(SandboxExecTool())
 
         # Ensure a real web search tool exists even if older registry constants exist.
         # If a web_search tool is already registered, registry should skip/ignore duplicates.
+
         self.tool_registry.register(WebSearchTool())
         self.tool_registry.register(INTERNET_EXTRACTOR_TOOL)
         self.tool_registry.register(CODE_ANALYZER_TOOL)
         self.tool_registry.register(MICROSERVICE_BUILDER_TOOL)
         self.tool_registry.register(BrowserAgent())
+        safe_register(WebSearchTool())
+        safe_register(INTERNET_EXTRACTOR_TOOL)
+        safe_register(CODE_ANALYZER_TOOL)
+        safe_register(MICROSERVICE_BUILDER_TOOL)
+        safe_register(BrowserAgent())
+   
         generate_echo_tool(prefix="Echo: ", registry=self.tool_registry)
 
     def process_input(self, message: str) -> str:

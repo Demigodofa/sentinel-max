@@ -31,6 +31,34 @@ TASK_PREFIXES = (
     "run ",
 )
 
+WEB_TASK_PATTERNS = (
+    r"\b(search the web|web search|google|look up|lookup|find online)\b",
+    r"\b(go online|go on the internet|search online|find on the internet|browse online)\b",
+    r"\b(online research|internet research)\b",
+)
+
+FILE_ACTION_HINTS = ("save", "write", "store", "record")
+WEB_REFERENCES = ("online", "internet", "web")
+
+
+ACTION_TRIGGERS = (
+    "make ",
+    "create ",
+    "build ",
+    "write ",
+    "generate ",
+    "fix ",
+    "debug ",
+    "install ",
+    "search ",
+    "look up",
+    "go online",
+    "download ",
+    "refactor ",
+    "run tests",
+    "open ",
+    "scrape",
+)
 
 def classify_intent(text: str) -> Intent:
     if not text or not text.strip():
@@ -44,13 +72,22 @@ def classify_intent(text: str) -> Intent:
     #  - "search the web for X"
     #  - "google X"
     #  - "look up X"
-    if re.search(r"\b(search the web|web search|google|look up|lookup|find online)\b", lowered):
+    for pattern in WEB_TASK_PATTERNS:
+        if re.search(pattern, lowered):
+            return Intent.TASK
+
+    # Detect file-save requests that imply tool usage even when phrased conversationally
+    # (e.g., "go online and find X and save it").
+    if any(hint in lowered for hint in FILE_ACTION_HINTS) and any(ref in lowered for ref in WEB_REFERENCES):
         return Intent.TASK
 
     if lowered.startswith("/auto") or any(keyword in lowered for keyword in AUTONOMY_KEYWORDS):
         return Intent.AUTONOMY_TRIGGER
 
     if lowered.startswith(TASK_PREFIXES):
+        return Intent.TASK
+
+    if any(trigger in lowered for trigger in ACTION_TRIGGERS):
         return Intent.TASK
 
     return Intent.CONVERSATION

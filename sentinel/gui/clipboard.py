@@ -24,6 +24,10 @@ def install(root: tk.Misc) -> None:
     Make right click copy/paste work everywhere.
     """
     # Add right-click context menu on focus
+    Right-click context menus only.
+    No keybindings (prevents A/B/C acting like shortcuts while typing).
+    """
+
     def on_focus_in(event: tk.Event) -> None:
         widget = event.widget
         if isinstance(widget, (tk.Entry, tk.Text)):

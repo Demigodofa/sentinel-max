@@ -42,7 +42,24 @@ class LogPanel(ttk.Frame):
         )
         self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.text.yview)
         self.text.configure(yscrollcommand=self.scrollbar.set)
-        self.text.configure(state="disabled")
+        self.text.configure(state="normal")
+
+        for seq in ("<Control-c>", "<Command-c>"):
+            self.text.bind(seq, self._copy)
+        for seq in ("<Control-a>", "<Command-a>"):
+            self.text.bind(seq, self._select_all)
+        for seq in ("<Control-v>", "<Command-v>"):
+            self.text.bind(seq, self._block_edit)
+        for seq in ("<Control-x>", "<Command-x>"):
+            self.text.bind(seq, self._block_edit)
+        self.text.bind("<Button-3>", self._open_menu)
+
+        self._menu = tk.Menu(self, tearoff=0)
+        self._menu.add_command(label="Copy", command=self._copy_menu)
+        self._menu.add_command(label="Paste", command=self._paste_menu)
+        self._menu.add_command(label="Cut", command=self._cut_menu)
+        self._menu.add_separator()
+        self._menu.add_command(label="Select All", command=self._select_all_menu)
 
         self.text.bind("<Button-3>", self._open_menu)
 
@@ -65,11 +82,16 @@ class LogPanel(ttk.Frame):
         if not lines:
             return
 
-        self.text.configure(state="normal")
         for line in lines:
             self.text.insert(tk.END, line.rstrip() + "\n")
         self.text.see(tk.END)
+
         self.text.configure(state="disabled")
+
+    def _copy(self, event=None):  # type: ignore[override]
+        self.text.event_generate("<<Copy>>")
+        return "break"
+
 
     def _copy_menu(self) -> None:
         self.text.event_generate("<<Copy>>")
@@ -86,6 +108,11 @@ class LogPanel(ttk.Frame):
         except Exception:
             pass
 
+
+    def _select_all(self, event=None):  # type: ignore[override]
+        self.text.tag_add("sel", "1.0", "end-1c")
+        return "break"
+
     def _select_all_menu(self) -> None:
         self.text.tag_add("sel", "1.0", "end-1c")
 
@@ -94,3 +121,7 @@ class LogPanel(ttk.Frame):
             self._menu.tk_popup(event.x_root, event.y_root)
         finally:
             self._menu.grab_release()
+
+
+    def _block_edit(self, event=None):  # type: ignore[override]
+        return "break"

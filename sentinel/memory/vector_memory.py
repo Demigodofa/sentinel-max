@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import math
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -15,14 +17,22 @@ logger = get_logger(__name__)
 
 
 class VectorMemory:
-    """Semantic vector store built on sentence-transformers with deterministic fallback."""
+    """Semantic vector store built on sentence-transformers with deterministic fallback.
 
-    def __init__(self, model_name: Optional[str] = None) -> None:
+    Entries are persisted to disk so both short-term (in-memory) and long-term
+    retrieval share a consistent backing store under the sandbox root.
+    """
+
+    def __init__(self, model_name: Optional[str] = None, storage_path: Optional[Path] = None) -> None:
         self.model_name = model_name or "sentence-transformers/all-MiniLM-L6-v2"
         self._model = None
         self._lock = threading.RLock()
         self._entries: Dict[str, Dict[str, Any]] = {}
         self._fallback_dim = 32
+        self.storage_path = Path(storage_path) if storage_path else None
+        if self.storage_path:
+            self.storage_path.parent.mkdir(parents=True, exist_ok=True)
+            self._load()
 
     # ------------------------------------------------------------------
     # Embedding utilities
@@ -76,11 +86,15 @@ class VectorMemory:
                 "embedding": embedding,
                 "created_at": timestamp,
             }
+            self._persist()
         return entry_id
 
     def delete(self, entry_id: str) -> bool:
         with self._lock:
-            return self._entries.pop(entry_id, None) is not None
+            removed = self._entries.pop(entry_id, None) is not None
+            if removed:
+                self._persist()
+            return removed
 
     def search(
         self,
@@ -136,3 +150,45 @@ class VectorMemory:
                     for entry_id, entry in self._entries.items()
                 ]
             }
+
+    # ------------------------------------------------------------------
+    # Persistence helpers
+    # ------------------------------------------------------------------
+    def _load(self) -> None:
+        if not self.storage_path or not self.storage_path.exists():
+            return
+        try:
+            content = self.storage_path.read_text(encoding="utf-8")
+            data = json.loads(content) if content else {}
+            entries = data.get("entries", [])
+            if isinstance(entries, list):
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    entry_id = entry.get("id") or str(uuid4())
+                    self._entries[entry_id] = {
+                        "id": entry_id,
+                        "text": entry.get("text", ""),
+                        "metadata": entry.get("metadata", {}),
+                        "namespace": entry.get("namespace", "default"),
+                        "embedding": entry.get("embedding", self._hash_embed(entry.get("text", ""))),
+                        "created_at": entry.get("created_at", datetime.now(timezone.utc).isoformat()),
+                    }
+        except Exception as exc:  # pragma: no cover - defensive load
+            logger.warning("VectorMemory: failed to load persisted entries: %s", exc)
+
+    def _persist(self) -> None:
+        if not self.storage_path:
+            return
+        payload = {"entries": list(self._entries.values())}
+        temp_path = self.storage_path.with_suffix(".tmp")
+        try:
+            temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            temp_path.replace(self.storage_path)
+        except Exception as exc:  # pragma: no cover - defensive persistence
+            logger.warning("VectorMemory: failed to persist entries: %s", exc)
+            try:
+                if temp_path.exists():
+                    temp_path.unlink()
+            except OSError:
+                logger.debug("VectorMemory: temp cleanup failed after persist error")
