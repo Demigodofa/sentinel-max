@@ -47,6 +47,10 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 
    The sandbox root defaults to `F:\\Sandbox` (configurable via `SENTINEL_SANDBOX_ROOT`), and both symbolic + vector memories now persist under `memory/` in that sandbox. Override with `SENTINEL_STORAGE_DIR` if you need a different memory location.
 
+## Sandbox walkthrough
+
+Want to exercise every major capability in a single session? Follow [docs/sandbox_walkthrough.md](docs/sandbox_walkthrough.md) for a start-to-finish checklist that covers CLI planning/execution, autonomy gating, policy visibility, memory recall, tool coverage (including web/code/microservice/browser agents), GUI/server expectations, and prioritized follow-up fixes. The guide now includes a coverage matrix and dead-path detection tips so you can confirm conversational commands route correctly and that no part of the pipeline sits idle.
+
 ### Applying patches on Windows/PowerShell
 
 If you receive a diff in chat, pasting it directly into PowerShell will raise errors because the shell attempts to execute each
