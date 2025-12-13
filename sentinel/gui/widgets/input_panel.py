@@ -62,6 +62,7 @@ class InputPanel(ttk.Frame):
         self.send_button.grid(row=0, column=1, sticky="e")
 
         self.entry.bind("<Return>", lambda _: self._handle_send(on_send))
+
         for seq in ("<Control-a>", "<Command-a>"):
             self.entry.bind(seq, self._select_all)
         for seq in ("<Control-v>", "<Command-v>"):
@@ -70,6 +71,7 @@ class InputPanel(ttk.Frame):
             self.entry.bind(seq, self._cut)
         for seq in ("<Control-c>", "<Command-c>"):
             self.entry.bind(seq, self._copy)
+
         self.entry.bind("<Button-3>", self._open_menu)
 
         self._menu = tk.Menu(self, tearoff=0)
@@ -94,6 +96,7 @@ class InputPanel(ttk.Frame):
         return self.entry_var.get().strip()
 
     # Clipboard helpers -------------------------------------------------
+
     def _select_all(self, event=None):  # type: ignore[override]
         self.entry.selection_range(0, "end")
         return "break"
@@ -109,6 +112,7 @@ class InputPanel(ttk.Frame):
     def _paste(self, event=None):  # type: ignore[override]
         self.entry.event_generate("<<Paste>>")
         return "break"
+
 
     def _open_menu(self, event):  # type: ignore[override]
         try:

@@ -293,7 +293,9 @@ class ConversationController:
                 "  /auto on|off        toggle auto-execution mode\n"
                 "  /auto <turns>       enable bounded autonomy for N turns (default 1h timer)\n"
                 "  /auto <duration>    enable bounded autonomy for a duration (e.g., 30m, 1h)\n"
+
                 "  /auto until done    run autonomously without turn/time limits (manual stop)\n"
+
                 "  /auto <task>        one-shot: plan+execute <task>\n"
                 "  /run                execute the last proposed plan\n"
             )
@@ -395,6 +397,7 @@ class ConversationController:
         if lower.startswith("/auto "):
             remainder = text[len("/auto ") :].strip()
             turns, ttl = self._parse_auto_budget(remainder)
+
             if turns is None and ttl is None and remainder.lower() in {
                 "until done",
                 "until complete",
@@ -414,6 +417,7 @@ class ConversationController:
                     "trace": None,
                     "dialog_context": session_context,
                 }
+
             if turns is not None or ttl is not None:
                 ttl_seconds = ttl or 3600
                 self._arm_auto_mode(turns=turns, ttl_seconds=ttl_seconds)
@@ -508,8 +512,10 @@ class ConversationController:
         lowered = text.lower().strip()
         if not lowered:
             return (None, None)
+
         if lowered in {"until done", "until complete", "until finished", "no limit", "forever"}:
             return (None, None)
+
         match_hours = re.search(r"(\d+)\s*(h|hr|hrs|hour|hours)", lowered)
         if match_hours:
             return (None, int(match_hours.group(1)) * 3600)

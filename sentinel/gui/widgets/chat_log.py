@@ -8,8 +8,7 @@ from tkinter import ttk
 class ChatLog(ttk.Frame):
     """
     A scrollable text transcript that supports:
-      - selection + Ctrl+C copy
-      - right-click context menu (Copy / Select All)
+      - selection with right-click copy/select-all options
       - readable, high contrast colors
     """
 
@@ -55,6 +54,10 @@ class ChatLog(ttk.Frame):
         self.text.tag_configure("agent", spacing1=6, spacing3=10)
         self.text.tag_configure("meta", foreground=c["muted"], font=self.fonts["mono"])
 
+        # Make it read-only but still selectable
+        self.text.configure(state="disabled")
+
+
         # Clipboard bindings
         for seq in ("<Control-c>", "<Command-c>"):
             self.text.bind(seq, self._copy)
@@ -64,6 +67,7 @@ class ChatLog(ttk.Frame):
             self.text.bind(seq, self._paste_blocked)
         for seq in ("<Control-x>", "<Command-x>"):
             self.text.bind(seq, self._cut_blocked)
+
         self.text.bind("<Button-3>", self._open_menu)  # right click
 
         self._menu = tk.Menu(self, tearoff=0)
@@ -85,12 +89,6 @@ class ChatLog(ttk.Frame):
         self.text.configure(state="normal")
         self.text.see("end")
 
-    def _copy(self, event=None):  # type: ignore[override]
-        try:
-            self.text.event_generate("<<Copy>>")
-        finally:
-            return "break"
-
     def _copy_menu(self) -> None:
         self.text.event_generate("<<Copy>>")
 
@@ -107,9 +105,11 @@ class ChatLog(ttk.Frame):
         except Exception:
             pass
 
+
     def _select_all(self, event=None):  # type: ignore[override]
         self.text.tag_add("sel", "1.0", "end-1c")
         return "break"
+
 
     def _select_all_menu(self) -> None:
         self.text.tag_add("sel", "1.0", "end-1c")

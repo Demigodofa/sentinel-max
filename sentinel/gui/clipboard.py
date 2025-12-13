@@ -17,14 +17,17 @@ def _install_context_menu(widget: tk.Widget) -> None:
             menu.grab_release()
 
     widget.bind("<Button-3>", popup)  # Windows right click
-    widget.bind("<Control-Button-1>", popup)  # trackpads / alt-click
 
 
 def install(root: tk.Misc) -> None:
     """
+    Make right click copy/paste work everywhere.
+    """
+    # Add right-click context menu on focus
     Right-click context menus only.
     No keybindings (prevents A/B/C acting like shortcuts while typing).
     """
+
     def on_focus_in(event: tk.Event) -> None:
         widget = event.widget
         if isinstance(widget, (tk.Entry, tk.Text)):

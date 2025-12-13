@@ -61,6 +61,15 @@ class LogPanel(ttk.Frame):
         self._menu.add_separator()
         self._menu.add_command(label="Select All", command=self._select_all_menu)
 
+        self.text.bind("<Button-3>", self._open_menu)
+
+        self._menu = tk.Menu(self, tearoff=0)
+        self._menu.add_command(label="Copy", command=self._copy_menu)
+        self._menu.add_command(label="Paste", command=self._paste_menu)
+        self._menu.add_command(label="Cut", command=self._cut_menu)
+        self._menu.add_separator()
+        self._menu.add_command(label="Select All", command=self._select_all_menu)
+
         self.text.grid(row=0, column=0, sticky="nsew")
         self.scrollbar.grid(row=0, column=1, sticky="ns")
 
@@ -77,9 +86,12 @@ class LogPanel(ttk.Frame):
             self.text.insert(tk.END, line.rstrip() + "\n")
         self.text.see(tk.END)
 
+        self.text.configure(state="disabled")
+
     def _copy(self, event=None):  # type: ignore[override]
         self.text.event_generate("<<Copy>>")
         return "break"
+
 
     def _copy_menu(self) -> None:
         self.text.event_generate("<<Copy>>")
@@ -96,6 +108,7 @@ class LogPanel(ttk.Frame):
         except Exception:
             pass
 
+
     def _select_all(self, event=None):  # type: ignore[override]
         self.text.tag_add("sel", "1.0", "end-1c")
         return "break"
@@ -108,6 +121,7 @@ class LogPanel(ttk.Frame):
             self._menu.tk_popup(event.x_root, event.y_root)
         finally:
             self._menu.grab_release()
+
 
     def _block_edit(self, event=None):  # type: ignore[override]
         return "break"
