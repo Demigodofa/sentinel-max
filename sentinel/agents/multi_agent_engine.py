@@ -466,5 +466,6 @@ class MultiAgentEngine:
         if gap:
             tool_spec = self.tool_evolution_agent.generate_tool_spec(gap)
             metrics = self.evaluate_tool_candidate(tool_spec)
-            self.tool_evolution_agent.decide_acceptance(metrics, self.autonomy_policy.autonomy_mode)
+            decision = self.tool_evolution_agent.decide_acceptance(metrics, self.autonomy_policy.autonomy_mode)
+            plan.add_metadata(tool_gap=gap, generated_tool=tool_spec, tool_decision=decision)
         return plan

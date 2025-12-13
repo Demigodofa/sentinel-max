@@ -7,7 +7,7 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 
 - **Long-Horizon Project Engine**: Durable project memory, dependency validation, policy-governed planning, and human-readable reporting.
 - **Policy-First Execution**: Safety, permission, determinism, and autonomy constraints enforced across planning and runtime.
-- **Memory Intelligence**: Symbolic + vector storage with curated contexts for planning, execution, and reflection.
+- **Memory Intelligence**: Symbolic + vector storage with curated contexts for planning, execution, and reflection — all persisted under the sandbox root (`F:\\Sandbox` by default).
 - **Simulation & Tooling**: Sandbox-backed tool registry, simulation sandbox, and multi-agent coordination for tool evolution.
 
 ## Runtime pipeline
@@ -43,14 +43,9 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
    python -m pytest sentinel/tests
    ```
 
-4. **Use an external drive (e.g., F:\\Sandbox)**
+4. **Storage defaults (F:\\Sandbox)**
 
-   Set `SENTINEL_PROJECT_STORAGE` to point long-horizon storage at your external sandbox location. All project files will be written there with atomic JSON updates.
-
-   ```bash
-   export SENTINEL_PROJECT_STORAGE="/mnt/f/Sandbox"
-   python -m sentinel.main --mode cli
-   ```
+   The sandbox root defaults to `F:\\Sandbox` (configurable via `SENTINEL_SANDBOX_ROOT`), and both symbolic + vector memories now persist under `memory/` in that sandbox. Override with `SENTINEL_STORAGE_DIR` if you need a different memory location.
 
 ### Applying patches on Windows/PowerShell
 
@@ -126,8 +121,12 @@ print(engine.dependency_issues(project["project_id"]))
 
 - **Policy visibility**: Policy events are persisted to memory (when configured) for auditability.
 - **Sandbox execution**: Tools run inside a restricted sandbox via the worker and topological executor.
-- **Autonomy guardrails**: Time, cycle, and refinement limits enforced before each loop iteration.
+- **Autonomy guardrails**: Time, cycle, and refinement limits enforced before each loop iteration. Use `/auto until done` to keep autonomy running without timing out; `/auto on|off` toggles bounded runs.
 - **Reflection**: Structured reflections stored under typed namespaces support replanning and transparency.
+
+## Self-augmentation feedback
+
+After each autonomous run the agent surfaces optimization hints (critic feedback, plan optimizations, and detected tool gaps). When gaps are found, the system proposes new agents/tools and records these suggestions in memory for follow-up.
 
 ## Support
 
