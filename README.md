@@ -7,16 +7,14 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 
 - **Long-Horizon Project Engine**: Durable project memory, dependency validation, policy-governed planning, and human-readable reporting.
 - **Policy-First Execution**: Safety, permission, determinism, and autonomy constraints enforced across planning and runtime.
-- **Memory Intelligence**: Symbolic + vector storage with curated contexts for planning, execution, and reflection — all persisted under the sandbox root (`F:\\Sandbox` by default). Ranked context windows, planning traces, execution summaries, reflections, policy events, and per-node execution facts (including artifacts) are written to dedicated namespaces (`memory_contexts`, `planning_traces`, `execution`, `reflection.*`, `policy_events`) as both structured facts and readable text entries.
-- **Sandboxed Tooling**: Sandbox-backed tool registry plus multi-agent coordination for tool evolution; GUI and CLI both drive the same controller pipeline.
+- **Memory Intelligence**: Symbolic + vector storage with curated contexts for planning, execution, and reflection — all persisted under the sandbox root (`F:\\Sandbox` by default).
+- **Sandboxed Tooling**: Sandbox-backed tool registry plus multi-agent coordination for tool evolution; GUI and CLI both drive the same controller pipeline. External fetches are mirrored into an evidence store so they can be audited later.
 
 ## Runtime pipeline
 
 - **Controller orchestration**: `SentinelController` instantiates memory, world model, tool registry, sandbox variants, policy engine, planner, worker, reflection, autonomy loop, research engine, and hot reload/self-modification guardrails. Default tools are registered during initialization, so missing tool errors usually mean controller startup failed.
 - **Conversation router**: `ConversationController` normalizes chat input, routes slash commands, requests confirmation when autonomy is off, and delivers accepted goals to the planner/worker/reflection loop.
-- **Message envelopes**: CLI, GUI, and API inputs are wrapped in a shared `MessageDTO` schema (`text`, `mode`, `autonomy`, `tool_call`, `context_refs`) and persisted to the `goals` namespace before planning to keep interfaces aligned.
-- **Memory queries**: Symbolic lookups now return the most recent records first within each namespace so the latest goals, plans, and reflections remain visible even when older test data persists on disk.
-- **Default tools**: Filesystem list/read/write/delete, sandboxed exec, deterministic web search, internet extractor, code analyzer, microservice builder, browser agent, and a configurable echo tool registered at startup.
+- **Default tools**: Filesystem list/read/write/delete, sandboxed exec, deterministic web search, deterministic internet extractor, code analyzer, microservice builder, browser agent, and a configurable echo tool registered at startup. Web search and extraction both log provenance into the evidence store (`memory/external_sources`).
 - **Direct tool execution**: `/tool <name> <json>` now runs the requested tool through the sandbox when available (with a registry fallback), so filesystem, sandbox exec, and web search tools execute for real rather than being simulated.
 - **Plan publication for GUI**: Executed task graphs are mirrored into simplified, versioned plan records under the `plans` namespace so the GUI plan panel always renders the latest steps instead of showing “No plan available.”
 - **Autonomy-aware replanning**: Reflection outputs (issues + plan adjustments) feed the planner during autonomous runs, triggering replans after failures and persisting revised DAGs with incremented versions for CLI/GUI display. Each autonomy cycle is also recorded with duration, reflection signals, and plan versions so runaway loops can be stopped by failure or timeout guards.
@@ -50,7 +48,15 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 
 4. **Storage defaults (F:\\Sandbox)**
 
-   The sandbox root defaults to `F:\\Sandbox` (configurable via `SENTINEL_SANDBOX_ROOT`), and both symbolic + vector memories now persist under `memory/` in that sandbox. Override with `SENTINEL_STORAGE_DIR` if you need a different memory location.
+   The sandbox root defaults to `F:\\Sandbox` (configurable via `SENTINEL_SANDBOX_ROOT`), and both symbolic + vector memories now persist under `memory/` in that sandbox. Override with `SENTINEL_STORAGE_DIR` if you need a different memory location. External evidence (search queries, fetched pages, provenance metadata) is written to `memory/external_sources` alongside the stores for later retrieval; call `MemoryManager.load_external_source(<key>)` to read the persisted content and metadata in later sessions.
+
+## Tool summary
+
+Default tools registered at controller startup and run through the sandbox:
+
+- `web_search` (deterministic): DuckDuckGo HTML search with results logged to `memory/external_sources` for provenance.
+- `internet_extract` (deterministic): Scrapes, cleans, summarizes, and stores content; evidence and cleaned HTML are persisted to `memory/external_sources` and vector memory.
+- Filesystem tools (`fs_list`, `fs_read`, `fs_write`, `fs_delete`), `sandbox_exec`, `code_analyzer`, `microservice_builder`, `browser_agent`, and the generated `echo` tool all retain the existing safety and policy checks.
 
 ## Sandbox walkthrough
 Want to exercise every major capability in a single session? Follow [docs/sandbox_walkthrough.md](docs/sandbox_walkthrough.md) for a start-to-finish checklist that covers CLI planning/execution, autonomy gating, policy visibility, memory recall, tool coverage (including web/code/microservice/browser agents), GUI/server expectations, and prioritized follow-up fixes. The guide now includes a coverage matrix and dead-path detection tips so you can confirm conversational commands route correctly and that no part of the pipeline sits idle.

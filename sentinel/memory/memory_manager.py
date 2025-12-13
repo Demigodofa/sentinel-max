@@ -41,6 +41,8 @@ class MemoryManager:
             base_dir = ensure_sandbox_root_exists() / "memory"
         base_dir = base_dir.expanduser().resolve()
         base_dir.mkdir(parents=True, exist_ok=True)
+        self.evidence_dir = base_dir / "external_sources"
+        self.evidence_dir.mkdir(parents=True, exist_ok=True)
         self.symbolic = SymbolicMemory(base_dir / "symbolic_store.json")
         self.vector = VectorMemory(model_name=embedding_model, storage_path=base_dir / "vector_store.json")
         self._lock = RLock()
@@ -132,6 +134,72 @@ class MemoryManager:
         if namespace not in allowed:
             raise ValueError(f"Unsupported research namespace: {namespace}")
         return self.store_fact(namespace, key=None, value=payload, metadata=metadata)
+
+    def store_external_source(
+        self,
+        *,
+        source_type: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        namespace: str = "external_sources",
+    ) -> Dict[str, Any]:
+        """Persist fetched external content with provenance in a lightweight evidence store."""
+
+        metadata = metadata or {}
+        record_key = metadata.get("id") or str(uuid4())
+        timestamp = datetime.now(timezone.utc).isoformat()
+        file_path = self.evidence_dir / f"{record_key}.txt"
+
+        with self._lock:
+            try:
+                file_path.write_text(content, encoding="utf-8")
+            except Exception as exc:  # pragma: no cover - defensive file write
+                logger.warning("Failed to persist external source content: %s", exc)
+
+            payload = {
+                "source_type": source_type,
+                "content_path": str(file_path),
+                "metadata": {**metadata, "stored_at": timestamp},
+                "timestamp": timestamp,
+            }
+            return self.store_fact(
+                namespace,
+                key=record_key,
+                value=payload,
+                metadata={"source_type": source_type, **metadata, "timestamp": timestamp},
+            )
+
+    def load_external_source(
+        self, record_key: str, namespace: str = "external_sources"
+    ) -> Optional[Dict[str, Any]]:
+        """Load persisted external evidence content and metadata by record key."""
+
+        records = self.query(namespace, key=record_key)
+        if not records:
+            return None
+
+        record = records[0]
+        value = record.get("value", {})
+        content_path = value.get("content_path")
+        content: Optional[str] = None
+
+        if content_path:
+            content_file = Path(content_path)
+            if not content_file.is_absolute():
+                content_file = self.evidence_dir / content_path
+            try:
+                content = content_file.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                logger.warning(
+                    "Evidence content missing on disk for %s:%s", namespace, record_key
+                )
+        return {
+            "key": record_key,
+            "namespace": namespace,
+            "metadata": record.get("metadata", {}),
+            "value": value,
+            "content": content,
+        }
 
     # ------------------------------------------------------------------
     # Compatibility helpers with legacy APIs

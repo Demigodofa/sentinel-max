@@ -39,7 +39,7 @@ from sentinel.tools import (
 )
 from sentinel.tools.browser_agent import BrowserAgent
 from sentinel.tools.code_analyzer import CODE_ANALYZER_TOOL
-from sentinel.tools.internet_extractor import INTERNET_EXTRACTOR_TOOL
+from sentinel.tools.internet_extractor import InternetExtractorTool
 from sentinel.tools.microservice_builder import MICROSERVICE_BUILDER_TOOL
 from sentinel.tools.registry import DEFAULT_TOOL_REGISTRY
 from sentinel.tools.tool_generator import generate_echo_tool
@@ -161,8 +161,13 @@ class SentinelController:
         safe_register(SandboxExecTool())
 
         # Network / analysis / builder tools
-        safe_register(WebSearchTool())
-        safe_register(INTERNET_EXTRACTOR_TOOL)
+        safe_register(WebSearchTool(memory_manager=self.memory))
+        safe_register(
+            InternetExtractorTool(
+                vector_memory=self.memory.vector,
+                memory_manager=self.memory,
+            )
+        )
         safe_register(CODE_ANALYZER_TOOL)
         safe_register(MICROSERVICE_BUILDER_TOOL)
         safe_register(BrowserAgent())
