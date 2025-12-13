@@ -635,13 +635,20 @@ class ConversationController:
                 "dialog_context": session_context,
             }
 
-        simulation = self.simulation_sandbox.simulate_tool_call(name, parsed_args, self.world_model)
-        if simulation.success:
-            outputs = simulation.predicted_outputs or simulation.benchmark
-            response_text = f"Tool '{name}' executed successfully: {outputs}"
-        else:
-            warnings = simulation.warnings or ["Unknown error"]
-            response_text = f"Tool '{name}' failed: {'; '.join(warnings)}"
+        # --- REAL execution (not simulation) ---
+        try:
+            # Prefer running through the real Sandbox if available
+            sandbox = getattr(getattr(self.autonomy, "worker", None), "sandbox", None)
+
+            if sandbox is not None:
+                output = sandbox.execute(self.planner.tool_registry.call, name, **parsed_args)
+            else:
+                # Fallback (less safe): direct registry call
+                output = self.planner.tool_registry.call(name, **parsed_args)
+
+            response_text = f"Tool '{name}' executed successfully:\n{output}"
+        except Exception as exc:
+            response_text = f"Tool '{name}' failed: {exc}"
         response = self.dialog_manager.format_agent_response(response_text)
         self.dialog_manager.record_turn(text, response, context=session_context)
         return {
@@ -666,6 +673,25 @@ class ConversationController:
                 "metadata": task_graph.metadata,
                 "nodes": [node.__dict__ for node in task_graph],
             },
+            metadata={"domain": normalized_goal.domain},
+        )
+        # Also publish a simplified plan for the GUI plan panel
+        steps = []
+        for node in task_graph:
+            steps.append(
+                {
+                    "id": getattr(node, "id", ""),
+                    "title": getattr(node, "title", "")
+                    or getattr(node, "action", "")
+                    or getattr(node, "tool", ""),
+                    "depends_on": getattr(node, "depends_on", []) or [],
+                }
+            )
+
+        self.memory.store_fact(
+            "plans",
+            key=None,
+            value={"goal": goal_text, "steps": steps},
             metadata={"domain": normalized_goal.domain},
         )
         trace = self.autonomy.run_graph(task_graph, goal_text)
