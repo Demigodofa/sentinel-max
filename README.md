@@ -107,6 +107,7 @@ print(engine.dependency_issues(project["project_id"]))
 ### Safety & Governance
 
 - **PolicyEngine** guards project limits (goals, dependency depth, duration, refinement rounds) and blocks forbidden actions.
+- **Structured policy outcomes**: Policy decisions now return an allow/block record with reasons and rewrites that flow into reflections and final responses for guided replanning.
 - **ProjectDependencyGraph** validates cycles, unresolved nodes, and computes depth before plans are persisted.
 - **ProjectMemory** provides atomic, versioned persistence with schema validation for goals, plans, histories, and reflections.
 - **DialogManager** surfaces overviews, progress, dependency issues, and milestones for human operators.

@@ -142,31 +142,45 @@ class ExecutionController:
             args = self._resolve_args(node, artifacts)
             try:
                 self._ensure_simulation_passed(node)
-                self.policy_engine.check_runtime_limits(
+                runtime_policy = self.policy_engine.check_runtime_limits(
                     {
                         "start_time": start_time,
                         "elapsed": time.time() - start_time,
                         "cycles": cycles,
                         "consecutive_failures": consecutive_failures,
                         "max_cycles": self.policy_engine.max_cycles,
-                    }
-                )
-                if node.tool:
-                    self.policy_engine.check_execution_allowed(node.tool)
-                self.approval_gate.request_approval(f"Execute task {node.id}: {node.description}")
-                if not self.approval_gate.is_approved():
-                    raise PermissionError("Approval required for real execution")
-                result = self.worker.execute_node_real(
-                    node,
-                    {
-                        "args": args,
-                        "artifacts": artifacts,
-                        "start_time": start_time,
-                        "cycles": cycles,
-                        "consecutive_failures": consecutive_failures,
-                        "elapsed": time.time() - start_time,
                     },
+                    enforce=False,
                 )
+                execution_policy = runtime_policy
+                if node.tool:
+                    execution_policy = runtime_policy.merge(
+                        self.policy_engine.check_execution_allowed(node.tool, enforce=False)
+                    )
+                if not execution_policy.allowed:
+                    result = ExecutionResult(
+                        node=node,
+                        success=False,
+                        error="; ".join(execution_policy.reasons) or "Policy blocked",
+                        policy=execution_policy,
+                    )
+                else:
+                    self.approval_gate.request_approval(
+                        f"Execute task {node.id}: {node.description}"
+                    )
+                    if not self.approval_gate.is_approved():
+                        raise PermissionError("Approval required for real execution")
+                    result = self.worker.execute_node_real(
+                        node,
+                        {
+                            "args": args,
+                            "artifacts": artifacts,
+                            "start_time": start_time,
+                            "cycles": cycles,
+                            "consecutive_failures": consecutive_failures,
+                            "elapsed": time.time() - start_time,
+                        },
+                    )
                 if result.success:
                     executed.add(node.id)
                     consecutive_failures = 0

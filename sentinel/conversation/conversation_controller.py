@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Dict, Optional, TYPE_CHECKING, Iterable, Tuple
+from typing import Dict, Optional, TYPE_CHECKING, Iterable, Tuple, List
 
 if TYPE_CHECKING:
     from sentinel.agent_core.autonomy import AutonomyLoop
@@ -707,6 +707,15 @@ class ConversationController:
             base = "Tasks executed successfully with constraints validated."
 
         suggestions: list[str] = []
+        policy_blocks, policy_rewrites, policy_suggestions = self._policy_summary(trace)
+        if policy_blocks or policy_rewrites:
+            policy_bits: list[str] = []
+            if policy_blocks:
+                policy_bits.append(f"Policy blocks: {'; '.join(policy_blocks)}")
+            if policy_rewrites:
+                policy_bits.append(f"Policy rewrites: {'; '.join(policy_rewrites)}")
+            base = f"{base} {' '.join(policy_bits)}"
+        suggestions.extend(policy_suggestions)
         metadata = getattr(task_graph, "metadata", {}) if task_graph else {}
         if isinstance(metadata, dict):
             critic = metadata.get("critic_suggestions") or []
@@ -734,3 +743,20 @@ class ConversationController:
         if normalized_goal.preferences:
             base = f"{base} Persona: {', '.join(normalized_goal.preferences)}."
         return self.dialog_manager.format_agent_response(base)
+
+    def _policy_summary(self, trace: ExecutionTrace) -> tuple[list[str], list[str], list[str]]:
+        blocked: list[str] = []
+        rewrites: list[str] = []
+        suggestions: list[str] = []
+        for result in getattr(trace, "results", []) or []:
+            policy = getattr(result, "policy", None)
+            if not policy:
+                continue
+            if policy.rewrites:
+                rewrites.extend(policy.rewrites)
+            if not policy.allowed and policy.reasons:
+                blocked.append(f"{result.node.id}: {', '.join(policy.reasons)}")
+                suggestions.append(
+                    f"Replan around {result.node.id}: {', '.join(policy.reasons)}"
+                )
+        return blocked, rewrites, suggestions
