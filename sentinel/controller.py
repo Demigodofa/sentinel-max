@@ -109,36 +109,34 @@ class SentinelController:
         self.self_mod = SelfModificationEngine(self.patch_auditor)
         self.hot_reloader = HotReloader()
 
-    def _register_default_tools(self) -> None:
+        def _register_default_tools(self) -> None:
         def safe_register(tool) -> None:
-            if self.tool_registry.has_tool(tool.name):
+            # Prefer has_tool if available; otherwise just tolerate duplicates.
+            try:
+                if hasattr(self.tool_registry, "has_tool") and self.tool_registry.has_tool(tool.name):
+                    return
+                self.tool_registry.register(tool)
+            except ValueError:
+                # Tool already registered (singleton registry / reload / multiple controllers)
                 return
-            self.tool_registry.register(tool)
 
-        # Hard-sandboxed filesystem + exec + web search
+        # Hard-sandboxed filesystem + exec
         safe_register(FSListTool())
         safe_register(FSReadTool())
         safe_register(FSWriteTool())
         safe_register(FSDeleteTool())
         safe_register(SandboxExecTool())
 
-        # Ensure a real web search tool exists even if older registry constants exist.
-        # If a web_search tool is already registered, registry should skip/ignore duplicates.
-
-        tool = WebSearchTool()
-            if not self.tool_registry.has_tool(tool.name):
-        self.tool_registry.register(tool)
-        self.tool_registry.register(INTERNET_EXTRACTOR_TOOL)
-        self.tool_registry.register(CODE_ANALYZER_TOOL)
-        self.tool_registry.register(MICROSERVICE_BUILDER_TOOL)
-        self.tool_registry.register(BrowserAgent())
+        # Network / analysis / builder tools
         safe_register(WebSearchTool())
         safe_register(INTERNET_EXTRACTOR_TOOL)
         safe_register(CODE_ANALYZER_TOOL)
         safe_register(MICROSERVICE_BUILDER_TOOL)
         safe_register(BrowserAgent())
-   
+
+        # Optional echo tool
         generate_echo_tool(prefix="Echo: ", registry=self.tool_registry)
+
 
     def process_input(self, message: str) -> str:
         command_response = self._handle_cli_command(message)
