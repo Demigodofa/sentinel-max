@@ -10,6 +10,7 @@ from sentinel.conversation.intent_engine import (
 from sentinel.conversation.dialog_manager import DialogManager
 from sentinel.conversation.nl_to_taskgraph import NLToTaskGraph
 from sentinel.conversation.conversation_controller import ConversationController
+from sentinel.conversation.message_dto import MessageDTO
 
 __all__ = [
     "AmbiguityScanner",
@@ -21,4 +22,5 @@ __all__ = [
     "DialogManager",
     "NLToTaskGraph",
     "ConversationController",
+    "MessageDTO",
 ]
