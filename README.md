@@ -15,6 +15,8 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 - **Controller orchestration**: `SentinelController` instantiates memory, world model, tool registry, sandbox variants, policy engine, planner, worker, reflection, autonomy loop, research engine, and hot reload/self-modification guardrails. Default tools are registered during initialization, so missing tool errors usually mean controller startup failed.
 - **Conversation router**: `ConversationController` normalizes chat input, routes slash commands, requests confirmation when autonomy is off, and delivers accepted goals to the planner/worker/reflection loop.
 - **Default tools**: Filesystem list/read/write/delete, sandboxed exec, deterministic web search, internet extractor, code analyzer, microservice builder, browser agent, and a configurable echo tool registered at startup.
+- **Direct tool execution**: `/tool <name> <json>` now runs the requested tool through the sandbox when available (with a registry fallback), so filesystem, sandbox exec, and web search tools execute for real rather than being simulated.
+- **Plan publication for GUI**: Executed task graphs are mirrored into simplified plan records under the `plans` namespace, enabling the GUI plan panel to render current steps instead of showing “No plan available.”
 
 ## Quickstart
 

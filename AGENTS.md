@@ -92,5 +92,7 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - Expanded the sandbox walkthrough with conversational coverage and dead-path detection guidance so every pipeline stage can be verified end-to-end.
 - Clarified GUI wiring in repo map and sandbox walkthrough to reflect current ControllerBridge-driven pipeline instead of placeholder behavior.
 - Fixed `SentinelController` tool registration indentation so default tools load at startup, restoring task execution end-to-end.
+- Direct `/tool` invocations now execute through the sandbox (or registry fallback) so filesystem/web/sandbox tools run for real, enabling GUI and CLI parity.
+- Task graphs are mirrored into `plans` with simplified steps so the GUI plan panel renders current work instead of “No plan available.”
 
 
