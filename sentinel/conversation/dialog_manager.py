@@ -144,17 +144,16 @@ class DialogManager:
     # Safe fallbacks
     # ------------------------------------------------------------------
     def respond_conversationally(self, text: str) -> str:
-    msgs = [ChatMessage("system", build_system_prompt())]
+        msgs = [ChatMessage("system", build_system_prompt())]
 
-    # inject last few turns as chat history
-    for t in list(self.multi_turn_context)[-8:]:
-        msgs.append(ChatMessage("user", t["user"]))
-        msgs.append(ChatMessage("assistant", t["agent"]))
+        # inject last few turns as chat history
+        for t in list(self.multi_turn_context)[-8:]:
+            msgs.append(ChatMessage("user", t["user"]))
+            msgs.append(ChatMessage("assistant", t["agent"]))
 
-    msgs.append(ChatMessage("user", text))
+        msgs.append(ChatMessage("user", text))
 
-    reply = self._llm.chat(msgs, max_tokens=900)
-    ...
+        reply = self._llm.chat(msgs, max_tokens=900)
 
         if reply and reply.strip():
             return self.format_agent_response(reply.strip())

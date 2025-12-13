@@ -90,8 +90,8 @@ class SentinelController:
             self.execution_controller,
             self.reflector,
             self.memory,
-            cycle_limit=3,
-            timeout=5.0,
+            cycle_limit=5,
+            timeout=None,
         )
 
         self.conversation_controller = ConversationController(
@@ -124,11 +124,18 @@ class SentinelController:
 
         # Ensure a real web search tool exists even if older registry constants exist.
         # If a web_search tool is already registered, registry should skip/ignore duplicates.
+
+        self.tool_registry.register(WebSearchTool())
+        self.tool_registry.register(INTERNET_EXTRACTOR_TOOL)
+        self.tool_registry.register(CODE_ANALYZER_TOOL)
+        self.tool_registry.register(MICROSERVICE_BUILDER_TOOL)
+        self.tool_registry.register(BrowserAgent())
         safe_register(WebSearchTool())
         safe_register(INTERNET_EXTRACTOR_TOOL)
         safe_register(CODE_ANALYZER_TOOL)
         safe_register(MICROSERVICE_BUILDER_TOOL)
         safe_register(BrowserAgent())
+   
         generate_echo_tool(prefix="Echo: ", registry=self.tool_registry)
 
     def process_input(self, message: str) -> str:

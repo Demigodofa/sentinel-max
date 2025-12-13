@@ -35,7 +35,7 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - **PatchAuditor / Self-Modification / HotReloader**: Guardrails for code-generation workflows (auditing checks for banned tokens and absolute paths).
 
 ### Memory
-- **MemoryManager**: Unified symbolic/vector facade with semantic search fallback; used for planning, execution, reflection, and policy logging.
+- **MemoryManager**: Unified symbolic/vector facade with semantic search fallback; used for planning, execution, reflection, and policy logging. Storage now roots to the sandbox (`F:\\Sandbox` by default) under `memory/` with both symbolic and vector stores persisted to disk for long/short-term recall.
 - **Memory Intelligence**: `MemoryRanker` (relevance + decay), `MemoryFilter` (noise/dup removal), `MemoryContextBuilder` (context windows). Logs to `memory_contexts` and `memory_rank_reports`.
 
 ### Policy
@@ -49,6 +49,7 @@ This document is the living system specification for Sentinel MAX. It summarizes
 ### Interfaces
 - Single entry point (`main.py`) supports CLI, Tkinter GUI, and FastAPI server modes. All modes delegate to the controller pipeline.
 - The `ConversationController` normalizes user text, routes slash commands (e.g., `/auto`, `/tool`, `/tools`), gathers confirmation when autonomy is off, and hands accepted goals to the planner/worker/reflection loop.
+- Auto mode supports `/auto until done` for open-ended autonomy and surfaces critic/optimization/tool-gap suggestions (including proposed self-augmenting agents/tools) in the final response and memory.
 
 ## Planning + Autonomy Flow
 1. Goal intake stored in memory under `goals`.
@@ -87,3 +88,6 @@ This document is the living system specification for Sentinel MAX. It summarizes
 ## CHANGELOG
 - AdaptivePlanner, PolicyEngine, Memory Intelligence, and ReflectionEngine integrated across controller, planner, worker, and autonomy loop.
 - System spec updated to include policy, memory intelligence pipelines, and new namespaces.
+- Added sandbox walkthrough documentation for exercising CLI, autonomy, policy, memory, tool coverage, GUI/server expectations, and prioritized fixes.
+- Expanded the sandbox walkthrough with conversational coverage and dead-path detection guidance so every pipeline stage can be verified end-to-end.
+
