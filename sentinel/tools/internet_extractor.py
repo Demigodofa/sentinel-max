@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import re
-import re
 from typing import Any, Dict, Optional
 
 from sentinel.agent_core.base import Tool
 from sentinel.logging.logger import get_logger
+from sentinel.memory.memory_manager import MemoryManager
 from sentinel.memory.vector_memory import VectorMemory
 from sentinel.tools.web_scraper import WebScraperTool
 from sentinel.tools.tool_schema import ToolSchema
@@ -25,10 +25,15 @@ def _clean_text(text: str) -> str:
 
 
 class InternetExtractorTool(Tool):
-    def __init__(self, vector_memory: Optional[VectorMemory] = None) -> None:
+    def __init__(
+        self,
+        vector_memory: Optional[VectorMemory] = None,
+        memory_manager: Optional[MemoryManager] = None,
+    ) -> None:
         super().__init__("internet_extract", "Search, scrape, clean, and summarize web content", deterministic=True)
         self.scraper = WebScraperTool()
         self.vector_memory = vector_memory or VectorMemory()
+        self.memory_manager = memory_manager
         self.schema = ToolSchema(
             name="internet_extract",
             version="1.0.0",
@@ -53,6 +58,26 @@ class InternetExtractorTool(Tool):
                 )
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning("Vector memory store failed: %s", exc)
+        try:
+            if self.memory_manager:
+                evidence_body = {
+                    "url": url,
+                    "summary": summary,
+                    "text_length": len(clean_text),
+                }
+                self.memory_manager.store_external_source(
+                    source_type="internet_extract",
+                    content=_clean_text(scrape_result.get("html", "")),
+                    metadata={
+                        "tool": "internet_extract",
+                        "url": url,
+                        "summary": summary,
+                        "text_length": len(clean_text),
+                        "evidence": evidence_body,
+                    },
+                )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("Failed to record internet extraction evidence: %s", exc)
         return {
             "url": url,
             "raw_html": scrape_result.get("html", ""),
