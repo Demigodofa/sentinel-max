@@ -1,6 +1,7 @@
 """Controlled real execution coordinator."""
 from __future__ import annotations
 
+import json
 import time
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -142,31 +143,45 @@ class ExecutionController:
             args = self._resolve_args(node, artifacts)
             try:
                 self._ensure_simulation_passed(node)
-                self.policy_engine.check_runtime_limits(
+                runtime_policy = self.policy_engine.check_runtime_limits(
                     {
                         "start_time": start_time,
                         "elapsed": time.time() - start_time,
                         "cycles": cycles,
                         "consecutive_failures": consecutive_failures,
                         "max_cycles": self.policy_engine.max_cycles,
-                    }
-                )
-                if node.tool:
-                    self.policy_engine.check_execution_allowed(node.tool)
-                self.approval_gate.request_approval(f"Execute task {node.id}: {node.description}")
-                if not self.approval_gate.is_approved():
-                    raise PermissionError("Approval required for real execution")
-                result = self.worker.execute_node_real(
-                    node,
-                    {
-                        "args": args,
-                        "artifacts": artifacts,
-                        "start_time": start_time,
-                        "cycles": cycles,
-                        "consecutive_failures": consecutive_failures,
-                        "elapsed": time.time() - start_time,
                     },
+                    enforce=False,
                 )
+                execution_policy = runtime_policy
+                if node.tool:
+                    execution_policy = runtime_policy.merge(
+                        self.policy_engine.check_execution_allowed(node.tool, enforce=False)
+                    )
+                if not execution_policy.allowed:
+                    result = ExecutionResult(
+                        node=node,
+                        success=False,
+                        error="; ".join(execution_policy.reasons) or "Policy blocked",
+                        policy=execution_policy,
+                    )
+                else:
+                    self.approval_gate.request_approval(
+                        f"Execute task {node.id}: {node.description}"
+                    )
+                    if not self.approval_gate.is_approved():
+                        raise PermissionError("Approval required for real execution")
+                    result = self.worker.execute_node_real(
+                        node,
+                        {
+                            "args": args,
+                            "artifacts": artifacts,
+                            "start_time": start_time,
+                            "cycles": cycles,
+                            "consecutive_failures": consecutive_failures,
+                            "elapsed": time.time() - start_time,
+                        },
+                    )
                 if result.success:
                     executed.add(node.id)
                     consecutive_failures = 0
@@ -195,6 +210,7 @@ class ExecutionController:
             self.dialog_manager.notify_execution_status(
                 {"status": "completed", "elapsed": time.time() - start_time, "cycles": cycles}
             )
+        self._persist_trace(trace, artifacts, executed, failed)
         return trace
 
     # ------------------------------------------------------------------
@@ -255,11 +271,54 @@ class ExecutionController:
                 "success": result.success,
                 "error": result.error,
                 "output": result.output,
-                "namespace": "execution_real",
             }
-            self.memory.store_fact("execution_real", key=result.node.id, value=payload)
+            metadata = {"task": result.node.id, "tool": result.node.tool, "success": result.success, "type": "node_result"}
+            self.memory.store_fact("execution", key=result.node.id, value=payload, metadata=metadata)
+            self.memory.store_text(
+                json.dumps(payload, ensure_ascii=False),
+                namespace="execution",
+                metadata=metadata,
+            )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Failed to write execution log: %s", exc)
         self.dialog_manager.notify_execution_status(
             {"task": result.node.id, "success": result.success, "error": result.error}
         )
+
+    def _persist_trace(
+        self, trace: ExecutionTrace, artifacts: Dict[str, Any], executed: Set[str], failed: Set[str]
+    ) -> None:
+        try:
+            summary_payload = {
+                "type": "summary",
+                "successes": len([res for res in trace.results if res.success]),
+                "failures": len(trace.failed_nodes),
+                "executed": list(executed),
+                "failed": list(failed),
+            }
+            self.memory.store_text(
+                trace.summary(),
+                namespace="execution",
+                metadata=summary_payload,
+            )
+            self.memory.store_fact("execution", key=None, value=summary_payload, metadata=summary_payload)
+            if artifacts:
+                artifact_payload = {
+                    "type": "artifacts",
+                    "artifacts": artifacts,
+                    "executed": list(executed),
+                    "failed": list(failed),
+                }
+                self.memory.store_fact(
+                    "execution",
+                    key=None,
+                    value=artifact_payload,
+                    metadata={"type": "artifacts", "executed": list(executed), "failed": list(failed)},
+                )
+                self.memory.store_text(
+                    json.dumps(artifact_payload, ensure_ascii=False),
+                    namespace="execution",
+                    metadata={"type": "artifacts", "executed": list(executed), "failed": list(failed)},
+                )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("Failed to persist execution summary: %s", exc)

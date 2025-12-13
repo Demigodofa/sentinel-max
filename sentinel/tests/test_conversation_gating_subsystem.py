@@ -1,10 +1,12 @@
 from unittest.mock import MagicMock
 
 import pytest
+from unittest.mock import MagicMock
 
 from sentinel.agent_core.base import ExecutionTrace, Tool
 from sentinel.conversation.conversation_controller import ConversationController
 from sentinel.conversation.dialog_manager import DialogManager
+from sentinel.conversation.message_dto import MessageDTO
 from sentinel.conversation.intent_engine import NormalizedGoal
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.planning.task_graph import TaskGraph, TaskNode
@@ -75,12 +77,26 @@ def normalized_goal():
     )
 
 
+def test_envelope_logged_to_memory(normalized_goal):
+    controller, *_ = build_controller(normalized_goal)
+
+    controller.handle_input(
+        MessageDTO(text="hello", mode="test", context_refs=["ctx-1"])
+    )
+
+    stored = controller.memory.query("goals")
+    assert stored
+    assert stored[0]["value"]["text"] == "hello"
+    assert stored[0]["metadata"]["mode"] == "test"
+    assert stored[0]["metadata"]["context_refs"] == ["ctx-1"]
+
+
 def test_tools_command_returns_registered_tools(normalized_goal):
     registry = ToolRegistry()
     registry.register(DummyTool())
     controller, *_ = build_controller(normalized_goal, tool_registry=registry)
 
-    result = controller.handle_input("/tools")
+    result = controller.handle_input(MessageDTO(text="/tools", mode="test"))
 
     assert "- dummy_tool" in result["response"]
 
@@ -88,7 +104,7 @@ def test_tools_command_returns_registered_tools(normalized_goal):
 def test_task_request_prompts_for_execution(normalized_goal):
     controller, intent_engine, nl_to_taskgraph, autonomy, multi_agent_engine = build_controller(normalized_goal)
 
-    result = controller.handle_input("search the web for ai news")
+    result = controller.handle_input(MessageDTO(text="search the web for ai news", mode="test"))
 
     intent_engine.run.assert_called_once()
     nl_to_taskgraph.translate.assert_not_called()
@@ -106,8 +122,8 @@ def test_pending_plan_executes_on_yes(normalized_goal):
     multi_agent_engine.coordinate.return_value = graph
     autonomy.run_graph.return_value = ExecutionTrace()
 
-    controller.handle_input("search the web for ai news")
-    result = controller.handle_input("y")
+    controller.handle_input(MessageDTO(text="search the web for ai news", mode="test"))
+    result = controller.handle_input(MessageDTO(text="y", mode="test"))
 
     nl_to_taskgraph.translate.assert_called_once()
     multi_agent_engine.coordinate.assert_called_once()

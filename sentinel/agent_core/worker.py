@@ -50,9 +50,19 @@ class Worker:
         """Execute a single node with real tool calls gated by policy and approval."""
 
         args = context.get("args", {}) if context else {}
+        policy_result = None
         if self.policy_engine:
             if node.tool:
-                self.policy_engine.check_execution_allowed(node.tool)
+                policy_result = self.policy_engine.check_execution_allowed(
+                    node.tool, enforce=False
+                )
+                if not policy_result.allowed:
+                    return ExecutionResult(
+                        node=node,
+                        success=False,
+                        error="; ".join(policy_result.reasons) or "Policy blocked",
+                        policy=policy_result,
+                    )
             runtime_context = {
                 "start_time": context.get("start_time") if context else None,
                 "cycles": context.get("cycles", 0) if context else 0,
@@ -61,7 +71,20 @@ class Worker:
                 else 0,
                 "elapsed": context.get("elapsed") if context else None,
             }
-            self.policy_engine.check_runtime_limits(runtime_context)
+            runtime_policy = self.policy_engine.check_runtime_limits(
+                runtime_context, enforce=False
+            )
+            if policy_result:
+                policy_result = policy_result.merge(runtime_policy)
+            else:
+                policy_result = runtime_policy
+            if policy_result and not policy_result.allowed:
+                return ExecutionResult(
+                    node=node,
+                    success=False,
+                    error="; ".join(policy_result.reasons) or "Policy blocked",
+                    policy=policy_result,
+                )
         if self.approval_gate and not self.approval_gate.is_approved():
             raise PermissionError("Execution blocked: approval not granted")
 
@@ -70,10 +93,14 @@ class Worker:
                 output = args or node.description
             else:
                 output = self.sandbox.execute(self.tool_registry.call, node.tool, **args)
-            result = ExecutionResult(node=node, success=True, output=output)
+            result = ExecutionResult(
+                node=node, success=True, output=output, policy=policy_result
+            )
         except Exception as exc:  # pragma: no cover - runtime failures expected
             logger.error("Real execution failed for %s: %s", node.id, exc)
-            result = ExecutionResult(node=node, success=False, error=str(exc))
+            result = ExecutionResult(
+                node=node, success=False, error=str(exc), policy=policy_result
+            )
 
         if self.memory:
             metadata = {

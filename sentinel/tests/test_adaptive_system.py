@@ -139,6 +139,25 @@ class TestAdaptiveSystem(unittest.TestCase):
         trace = executor.execute(graph)
         self.assertTrue(trace.failed_nodes)
 
+    def test_planner_emits_tool_gap_when_no_tools_match(self):
+        empty_registry = ToolRegistry()
+        planner = AdaptivePlanner(empty_registry, self.memory, self.policy)
+        graph = planner.plan("Navigate a complex web form")
+
+        gaps = graph.metadata.get("tool_gaps", [])
+        self.assertTrue(gaps)
+        self.assertTrue(all(gap.get("requested_tool") for gap in gaps))
+
+        plan_records = self.memory.query("plans")
+        self.assertTrue(any("tool_gap" in str(record.get("value", {})) for record in plan_records))
+
+        policy_events = self.memory.query("policy_events")
+        self.assertTrue(any("tool_gap" in str(event.get("value", {})) for event in policy_events))
+
+        for node in graph:
+            if node.tool is not None:
+                self.assertTrue(empty_registry.has_tool(node.tool))
+
 
 if __name__ == "__main__":
     unittest.main()

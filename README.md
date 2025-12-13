@@ -7,13 +7,15 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 
 - **Long-Horizon Project Engine**: Durable project memory, dependency validation, policy-governed planning, and human-readable reporting.
 - **Policy-First Execution**: Safety, permission, determinism, and autonomy constraints enforced across planning and runtime.
-- **Memory Intelligence**: Symbolic + vector storage with curated contexts for planning, execution, and reflection — all persisted under the sandbox root (`F:\\Sandbox` by default).
+- **Memory Intelligence**: Symbolic + vector storage with curated contexts for planning, execution, and reflection — all persisted under the sandbox root (`F:\\Sandbox` by default). Ranked context windows, planning traces, execution summaries, reflections, policy events, and per-node execution facts (including artifacts) are written to dedicated namespaces (`memory_contexts`, `planning_traces`, `execution`, `reflection.*`, `policy_events`) as both structured facts and readable text entries.
 - **Sandboxed Tooling**: Sandbox-backed tool registry plus multi-agent coordination for tool evolution; GUI and CLI both drive the same controller pipeline.
 
 ## Runtime pipeline
 
 - **Controller orchestration**: `SentinelController` instantiates memory, world model, tool registry, sandbox variants, policy engine, planner, worker, reflection, autonomy loop, research engine, and hot reload/self-modification guardrails. Default tools are registered during initialization, so missing tool errors usually mean controller startup failed.
 - **Conversation router**: `ConversationController` normalizes chat input, routes slash commands, requests confirmation when autonomy is off, and delivers accepted goals to the planner/worker/reflection loop.
+- **Message envelopes**: CLI, GUI, and API inputs are wrapped in a shared `MessageDTO` schema (`text`, `mode`, `autonomy`, `tool_call`, `context_refs`) and persisted to the `goals` namespace before planning to keep interfaces aligned.
+- **Memory queries**: Symbolic lookups now return the most recent records first within each namespace so the latest goals, plans, and reflections remain visible even when older test data persists on disk.
 - **Default tools**: Filesystem list/read/write/delete, sandboxed exec, deterministic web search, internet extractor, code analyzer, microservice builder, browser agent, and a configurable echo tool registered at startup.
 - **Direct tool execution**: `/tool <name> <json>` now runs the requested tool through the sandbox when available (with a registry fallback), so filesystem, sandbox exec, and web search tools execute for real rather than being simulated.
 - **Plan publication for GUI**: Executed task graphs are mirrored into simplified, versioned plan records under the `plans` namespace so the GUI plan panel always renders the latest steps instead of showing “No plan available.”
@@ -108,6 +110,7 @@ print(engine.dependency_issues(project["project_id"]))
 ### Safety & Governance
 
 - **PolicyEngine** guards project limits (goals, dependency depth, duration, refinement rounds) and blocks forbidden actions.
+- **Structured policy outcomes**: Policy decisions now return an allow/block record with reasons and rewrites that flow into reflections and final responses for guided replanning.
 - **ProjectDependencyGraph** validates cycles, unresolved nodes, and computes depth before plans are persisted.
 - **ProjectMemory** provides atomic, versioned persistence with schema validation for goals, plans, histories, and reflections.
 - **DialogManager** surfaces overviews, progress, dependency issues, and milestones for human operators.
@@ -125,10 +128,11 @@ print(engine.dependency_issues(project["project_id"]))
 
 ## Operations
 
-- **Policy visibility**: Policy events are persisted to memory (when configured) for auditability.
+- **Policy visibility**: Policy events are persisted as structured facts with mirrored text entries in `policy_events` (when configured) for auditability.
 - **Sandbox execution**: Tools run inside a restricted sandbox via the worker and topological executor.
 - **Autonomy guardrails**: Time, cycle, and refinement limits enforced before each loop iteration with per-cycle metadata persisted for review. Use `/auto until done` to keep autonomy running without timing out; `/auto on|off` toggles bounded runs.
 - **Reflection**: Structured reflections stored under typed namespaces support replanning and transparency.
+- **Tool gaps**: When planning cannot map a subgoal to a registered tool, a tool-gap request is persisted to `plans` and `policy_events` so follow-up tooling can be generated with sandbox context.
 
 ## Self-augmentation feedback
 
