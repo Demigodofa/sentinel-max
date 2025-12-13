@@ -296,9 +296,20 @@ class PolicyEngine:
         payload = {"event": event_type, "message": message, "details": details or {}}
         try:
             if self.memory is not None:
-                self.memory.store_text(str(payload), namespace="policy_events", metadata=payload)
+                metadata = {**payload, "type": "policy_event"}
+                self.memory.store_fact("policy_events", key=None, value=payload, metadata=metadata)
+                self.memory.store_text(
+                    json.dumps(payload, ensure_ascii=False),
+                    namespace="policy_events",
+                    metadata=metadata,
+                )
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Failed to persist policy event: %s", exc)
+
+    def record_event(self, event_type: str, message: str, details: Optional[Dict[str, Any]] = None) -> None:
+        """Public helper to capture policy events from other subsystems."""
+
+        self._record_event(event_type, message, details)
 
     # ------------------------------------------------------------------
     # Long-horizon project governance

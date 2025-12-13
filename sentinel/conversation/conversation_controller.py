@@ -17,6 +17,7 @@ from sentinel.world.model import WorldModel
 from sentinel.conversation.dialog_manager import DialogManager
 from sentinel.conversation.intent import Intent, classify_intent
 from sentinel.conversation.intent_engine import IntentEngine, NormalizedGoal
+from sentinel.conversation.message_dto import MessageDTO
 from sentinel.conversation.nl_to_taskgraph import NLToTaskGraph
 from sentinel.agents.multi_agent_engine import MultiAgentEngine
 
@@ -63,9 +64,24 @@ class ConversationController:
         self.auto_budget_turns: Optional[int] = 0
         self.auto_deadline_epoch: float = 0.0
 
-    def handle_input(self, text: str) -> Dict[str, object]:
-        logger.info("Conversation pipeline received: %s", text)
+    def handle_input(self, message: MessageDTO | str) -> Dict[str, object]:
+        dto = MessageDTO.coerce(message)
+        payload = dto.to_payload()
+        logger.info("Conversation pipeline received envelope: %s", payload)
         session_context = self.dialog_manager.get_session_context()
+        self.memory.store_fact(
+            "goals",
+            key=None,
+            value=payload,
+            metadata={
+                "mode": dto.mode,
+                "autonomy": dto.autonomy,
+                "tool_call": bool(dto.tool_call),
+                "context_refs": list(dto.context_refs),
+            },
+        )
+
+        text = dto.text
         raw = text.strip()
         normalized_text = raw.lower()
 

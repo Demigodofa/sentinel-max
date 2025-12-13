@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import importlib
 import threading
-from typing import Dict, Optional
+from copy import deepcopy
+from typing import Any, Dict, Optional
 
 from sentinel.agent_core.base import Tool
 from sentinel.logging.logger import get_logger
@@ -101,6 +102,29 @@ class ToolRegistry:
     def has_tool(self, name: str) -> bool:
         with self._lock:
             return name in self._tools
+
+    def prompt_safe_summary(self) -> Dict[str, Dict[str, Any]]:
+        """Return a read-only view of tool metadata suitable for prompts."""
+
+        with self._lock:
+            summary: Dict[str, Dict[str, Any]] = {}
+            for name, schema in self._schemas.items():
+                inputs = {
+                    field: {
+                        "type": details.get("type", "any"),
+                        "description": details.get("description", ""),
+                        "required": bool(details.get("required", False)),
+                    }
+                    for field, details in schema.input_schema.items()
+                }
+                summary[name] = {
+                    "description": schema.description,
+                    "deterministic": schema.deterministic,
+                    "permissions": list(schema.permissions),
+                    "inputs": inputs,
+                    "outputs": deepcopy(schema.output_schema),
+                }
+            return summary
 
 
 # Singleton registry for convenience
