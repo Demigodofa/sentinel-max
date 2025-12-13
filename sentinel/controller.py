@@ -53,18 +53,30 @@ class SentinelController:
         self.memory = MemoryManager()
         self.world_model = WorldModel(self.memory)
 
+<<<<<<< Updated upstream
         # NOTE: DEFAULT_TOOL_REGISTRY may be a singleton; duplicate registration can happen on reload.
+=======
+        # NOTE: DEFAULT_TOOL_REGISTRY is a singleton registry shared across controllers.
+>>>>>>> Stashed changes
         self.tool_registry = DEFAULT_TOOL_REGISTRY
 
         ensure_sandbox_root_exists()
         self.sandbox = Sandbox()
 
         self.simulation_sandbox = SimulationSandbox(self.tool_registry)
+<<<<<<< Updated upstream
         self.memory_context_builder = MemoryContextBuilder(
             self.memory, tool_registry=self.tool_registry
         )
         self.policy_engine = PolicyEngine(self.memory)
 
+=======
+
+        self.memory_context_builder = MemoryContextBuilder(self.memory)
+        self.policy_engine = PolicyEngine(self.memory)
+
+        # Must be idempotent because registry is shared and controller can be re-created (GUI reload, etc).
+>>>>>>> Stashed changes
         self._register_default_tools()
 
         self.research_engine = AutonomousResearchEngine(
@@ -140,17 +152,27 @@ class SentinelController:
         self.hot_reloader = HotReloader()
 
     def _register_default_tools(self) -> None:
+<<<<<<< Updated upstream
         """Register built-in tools once per controller instance."""
 
         def safe_register(tool: Any) -> None:
             # Prefer has_tool if available; otherwise tolerate duplicates.
+=======
+        """
+        Register built-in tools. Must be safe to call multiple times because
+        DEFAULT_TOOL_REGISTRY is a singleton shared across controllers.
+        """
+
+        def safe_register(tool) -> None:
+            # If registry supports has_tool, prefer it.
+>>>>>>> Stashed changes
             try:
                 has_tool = getattr(self.tool_registry, "has_tool", None)
                 if callable(has_tool) and has_tool(tool.name):
                     return
                 self.tool_registry.register(tool)
             except ValueError:
-                # Tool already registered (singleton registry / reload / multiple controllers)
+                # Tool already registered (or duplicate name) — ignore.
                 return
 
         # Hard-sandboxed filesystem + exec
@@ -178,9 +200,14 @@ class SentinelController:
         except ValueError:
             pass
 
+<<<<<<< Updated upstream
     def process_input(self, message: MessageDTO | str) -> str:
         dto = MessageDTO.coerce(message)
         command_response = self._handle_cli_command(dto.text)
+=======
+    def process_input(self, message: str) -> str:
+        command_response = self._handle_cli_command(message)
+>>>>>>> Stashed changes
         if command_response is not None:
             return command_response
 
@@ -192,11 +219,16 @@ class SentinelController:
         logger.info("Processing user input: %s", dto.text)
         return self.conversation_controller.handle_input(dto)
 
+<<<<<<< Updated upstream
     def export_state(self) -> dict[str, Any]:
         tools = {
             name: getattr(tool, "description", "")
             for name, tool in self.tool_registry.list_tools().items()
         }
+=======
+    def export_state(self):
+        tools = {name: getattr(tool, "description", "") for name, tool in self.tool_registry.list_tools().items()}
+>>>>>>> Stashed changes
         world_model_state = self.memory.query("world_model", key="state")
         return {
             "memory": self.memory.export_state(),
@@ -249,6 +281,7 @@ class SentinelController:
             if not isinstance(args, dict):
                 return "Tool arguments must be a JSON object."
 
+<<<<<<< Updated upstream
             has_tool = getattr(self.tool_registry, "has_tool", None)
             if callable(has_tool):
                 if not has_tool(tool_name):
@@ -256,6 +289,10 @@ class SentinelController:
             else:
                 if tool_name not in self.tool_registry.list_tools():
                     return f"Tool '{tool_name}' not registered."
+=======
+            if hasattr(self.tool_registry, "has_tool") and not self.tool_registry.has_tool(tool_name):
+                return f"Tool '{tool_name}' not registered."
+>>>>>>> Stashed changes
 
             try:
                 output = self.sandbox.execute(self.tool_registry.call, tool_name, **args)
