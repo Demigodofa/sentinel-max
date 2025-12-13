@@ -109,7 +109,9 @@ class SentinelController:
         self.self_mod = SelfModificationEngine(self.patch_auditor)
         self.hot_reloader = HotReloader()
 
-        def _register_default_tools(self) -> None:
+    def _register_default_tools(self) -> None:
+        """Register built-in tools once per controller instance."""
+
         def safe_register(tool) -> None:
             # Prefer has_tool if available; otherwise just tolerate duplicates.
             try:

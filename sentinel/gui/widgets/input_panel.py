@@ -69,7 +69,7 @@ class InputPanel(ttk.Frame):
         )
         self.send_button.grid(row=0, column=1, sticky="e")
 
-                self.entry.bind("<Return>", lambda _: self._handle_send(on_send))
+        self.entry.bind("<Return>", lambda _: self._handle_send(on_send))
         for seq in _platform_seqs("<Control-a>", "<Command-a>"):
             self.entry.bind(seq, self._select_all)
 
