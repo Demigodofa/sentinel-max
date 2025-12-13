@@ -93,3 +93,4 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - Clarified GUI wiring in repo map and sandbox walkthrough to reflect current ControllerBridge-driven pipeline instead of placeholder behavior.
 - Fixed `SentinelController` tool registration indentation so default tools load at startup, restoring task execution end-to-end.
 
+
