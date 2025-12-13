@@ -4,7 +4,7 @@ This report summarizes runtime wiring, duplicate implementations, and risks base
 
 ## Boot flow (actual call chain)
 - **CLI**: `sentinel.main:main()` dispatches `--mode cli` to `run_cli()`, which instantiates `SentinelController` and routes every user input through `controller.process_input()` → `conversation_controller.handle_input()` → `DialogManager` / `IntentEngine` / `NLToTaskGraph` → `AdaptivePlanner` → `Worker` / `ExecutionController` → `AutonomyLoop` and reflection stack.【F:sentinel/main.py†L22-L68】【F:sentinel/controller.py†L34-L114】
-- **GUI**: `run_gui_app()` builds the Tkinter shell but currently calls a placeholder `_process()` that returns a static string instead of using `ControllerBridge`/`SentinelController`, so GUI interactions bypass the real pipeline.【F:sentinel/gui/app.py†L11-L56】 `ControllerBridge` exists to wrap `SentinelController.process_input()` on background threads and emit plan/log updates, but it is not yet invoked by the GUI widgets.【F:sentinel/gui/controller_bridge.py†L10-L82】
+- **GUI**: `run_gui_app()` builds the Tkinter shell, wires user input through `ControllerBridge`, and streams `SentinelController.process_input()` responses (agent text, plan updates, and logs) back into the widgets on the UI thread.【F:sentinel/gui/app.py†L11-L93】【F:sentinel/gui/controller_bridge.py†L10-L82】
 - **Server**: `sentinel.main --mode server` starts Uvicorn against `sentinel.server.main:app`; FastAPI handlers (not detailed here) would need to instantiate `SentinelController` similarly to the CLI path.【F:sentinel/main.py†L38-L63】
 
 ## Single source of truth (duplicate detection)
@@ -27,18 +27,18 @@ This report summarizes runtime wiring, duplicate implementations, and risks base
 - **Intent classification**: `classify_intent` maps `/auto` or autonomy keywords to `AUTONOMY_TRIGGER`; task-like prefixes become `TASK`; everything else is `CONVERSATION`, which yields generic acknowledgements like “Got it — I’ve noted that.”【F:sentinel/conversation/intent.py†L4-L33】【F:sentinel/conversation/dialog_manager.py†L70-L107】
 - **Slash commands**: `/auto` has multiple modes—execute pending plan, toggle auto mode, or one-shot plan+execute; `/run` executes pending plans; `/cancel` clears queued work; `/tools` lists registry contents.【F:sentinel/conversation/conversation_controller.py†L270-L355】
 - **Autonomy loop usage**: When `Intent.AUTONOMY_TRIGGER` arrives and a pending goal/plan exists, `ConversationController` calls `_execute_with_goal`/`_execute_pending_plan`, which translate goals to `TaskGraph` via `NLToTaskGraph`, then run through planner→worker→execution controller→reflector inside the injected `AutonomyLoop`.【F:sentinel/conversation/conversation_controller.py†L143-L242】
-- **GUI gap**: Because GUI bypasses `ConversationController`, none of the autonomy gating or tool handling currently runs in GUI mode, explaining CLI/GUI behavioral divergence.
+- **GUI behavior**: GUI input flows through `ConversationController` and the same autonomy/tool pipeline as CLI/server via `ControllerBridge`, so plan execution, tool calls, and reflections are available in GUI mode.
 
 ## Risk list / weirdness
 - **Import-time side effects**: `DEFAULT_TOOL_REGISTRY` registers a `BrowserAgent` during module import; loading `sentinel.tools` also imports `requests` and attempts web-tool setup before configuration or dependency checks.【F:sentinel/tools/registry.py†L56-L74】【ce5401†L1-L16】
 - **Global singletons**: Shared `DEFAULT_TOOL_REGISTRY` and singleton `MemoryManager` usage in `SentinelController` mean state leaks across GUI/CLI/server instances if multiple controllers are created in one process.
 - **Missing dependencies**: `requests` is not installed, causing import failures for `sentinel.main`/`controller` and the tool registry script; this explains “works in CLI but not GUI” style issues in environments lacking optional deps.【a527aa†L1-L17】【a82d42†L8-L14】
-- **GUI placeholder**: GUI widgets never call `ControllerBridge`, so the runtime pipeline, tool registry, and autonomy features are inert in GUI mode.【F:sentinel/gui/app.py†L35-L56】
+*** (entry removed: GUI now routes through `ControllerBridge` and the shared controller pipeline)***
 
 ## Actionable recommendations
 1. Consolidate dialog managers into the `sentinel/conversation` version and delete/alias the two unused variants to avoid confusion.
 2. Move `DEFAULT_TOOL_REGISTRY` population into `SentinelController._register_default_tools()` (or a dedicated bootstrap) and avoid registration during module import to reduce side effects and GUI/CLI divergence.
-3. Make `run_gui_app()` use `ControllerBridge` (or another adapter) so GUI inputs flow through `SentinelController.process_input()` just like CLI/Server paths.
+3. Keep GUI aligned with CLI/server by ensuring any new conversation commands or autonomy modes are surfaced through `ControllerBridge` callbacks and covered by GUI tests.
 4. Add dependency checks or optional imports for `requests` (and other web tools) to prevent import-time crashes when the package is missing.
 
 ## Repo map table
@@ -52,8 +52,8 @@ This report summarizes runtime wiring, duplicate implementations, and risks base
 | `sentinel/dialog_manager.py` | Compatibility wrapper storing dialog turns | (Not referenced by `SentinelController`) | `MemoryManager`, `WorldModel` | No |
 | `sentinel/agent_core/autonomy.py` | Reflection-driven autonomy executor | `SentinelController`, `ConversationController` | `AdaptivePlanner`, `Worker`, `ExecutionController`, `Reflector` | Yes |
 | `sentinel/tools/registry.py` | Tool registry + global `DEFAULT_TOOL_REGISTRY` | Imported by many modules at import time | Registers `BrowserAgent`; validates tools | Yes (global) |
-| `sentinel/gui/app.py` | Tkinter UI shell | End-users (GUI mode) | Placeholder `_process()` only | Partially (logic missing) |
-| `sentinel/gui/controller_bridge.py` | Threaded adapter around `SentinelController` for GUI widgets | Intended for GUI | `SentinelController.process_input`, memory readers | Not wired |
+| `sentinel/gui/app.py` | Tkinter UI shell | End-users (GUI mode) | Wires widgets to `ControllerBridge` for streamed controller responses | Yes |
+| `sentinel/gui/controller_bridge.py` | Threaded adapter around `SentinelController` for GUI widgets | GUI | `SentinelController.process_input`, memory readers | Yes |
 | `sentinel/llm/client.py` | Minimal OpenAI/Ollama-compatible client | Dialog managers, planners | Env-driven HTTP chat | Yes |
 
 ## One-liner Codex prompt

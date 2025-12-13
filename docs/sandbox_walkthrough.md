@@ -63,7 +63,7 @@ This guide walks from zero-to-hero in a local sandbox so you can exercise the Se
   ```bash
   python -m sentinel.main --mode gui
   ```
-- Expected behavior (today): GUI widgets should stream outputs from `SentinelController.process_input()` via `ControllerBridge`. If you only see static placeholder responses, the GUI wiring is incomplete.
+- Expected behavior (today): GUI widgets stream outputs from `SentinelController.process_input()` via `ControllerBridge`. You should see agent messages, plan updates, and execution logs flowing into the panels.
 - For server mode, ensure FastAPI handlers instantiate `SentinelController` once and reuse it per process.
 
 ## 7) Coverage checklist and dead-path detection
@@ -78,7 +78,7 @@ This guide walks from zero-to-hero in a local sandbox so you can exercise the Se
 ## 8) What to change / add next
 =======
 ## 7) What to change / add next
-- **Wire the GUI to the real pipeline**: Replace the `_process()` placeholder in `sentinel/gui/app.py` with `ControllerBridge` calls so GUI input flows through the same planner/worker/policy stack as CLI/server.
+- **Keep GUI parity**: When adding new conversation commands or autonomy behaviors, ensure `ControllerBridge` propagates them so GUI, CLI, and server stay aligned.
 - **Defer tool registration side effects**: Move `DEFAULT_TOOL_REGISTRY` population out of import time and behind the controller bootstrap to avoid global state leakage and optional-dependency crashes.
 - **Make web tools optional**: Guard `requests` imports and surface a clearer error or disable web tools when the dependency is missing so CLI/GUI startup does not fail on fresh environments.
 - **Harmonize dialog managers**: Remove or alias the unused dialog manager variants so only `sentinel/conversation/dialog_manager.py` remains authoritative.
