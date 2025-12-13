@@ -8,16 +8,17 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 - **Long-Horizon Project Engine**: Durable project memory, dependency validation, policy-governed planning, and human-readable reporting.
 - **Policy-First Execution**: Safety, permission, determinism, and autonomy constraints enforced across planning and runtime.
 - **Memory Intelligence**: Symbolic + vector storage with curated contexts for planning, execution, and reflection — all persisted under the sandbox root (`F:\\Sandbox` by default).
-- **Sandboxed Tooling**: Sandbox-backed tool registry plus multi-agent coordination for tool evolution; GUI and CLI both drive the same controller pipeline. External fetches are mirrored into an evidence store so they can be audited later.
+- **Sandboxed Tooling**: Sandbox-backed tool registry plus multi-agent coordination for tool evolution; GUI and CLI both drive the same controller pipeline.
+- **Structured Pipeline Telemetry**: Each ingest → plan → policy → execute → reflect stage emits correlated records so you can trace a turn end-to-end via CLI or GUI.
 
 ## Runtime pipeline
 
 - **Controller orchestration**: `SentinelController` instantiates memory, world model, tool registry, sandbox variants, policy engine, planner, worker, reflection, autonomy loop, research engine, and hot reload/self-modification guardrails. Default tools are registered during initialization, so missing tool errors usually mean controller startup failed.
-- **Conversation router**: `ConversationController` normalizes chat input, routes slash commands, requests confirmation when autonomy is off, and delivers accepted goals to the planner/worker/reflection loop.
-- **Default tools**: Filesystem list/read/write/delete, sandboxed exec, deterministic web search, deterministic internet extractor, code analyzer, microservice builder, browser agent, and a configurable echo tool registered at startup. Web search and extraction both log provenance into the evidence store (`memory/external_sources`).
+- **Conversation router**: `ConversationController` normalizes chat input, routes slash commands, requests confirmation when autonomy is off, and delivers accepted goals to the planner/worker/reflection loop. Slash-command flows (/auto, /tools, etc.) now retain pipeline correlation IDs so telemetry stays linked even when the intent engine is bypassed.
+- **Default tools**: Filesystem list/read/write/delete, sandboxed exec, deterministic web search, internet extractor, code analyzer, microservice builder, browser agent, and a configurable echo tool registered at startup.
 - **Direct tool execution**: `/tool <name> <json>` now runs the requested tool through the sandbox when available (with a registry fallback), so filesystem, sandbox exec, and web search tools execute for real rather than being simulated.
-- **Plan publication for GUI**: Executed task graphs are mirrored into simplified, versioned plan records under the `plans` namespace so the GUI plan panel always renders the latest steps instead of showing “No plan available.”
-- **Autonomy-aware replanning**: Reflection outputs (issues + plan adjustments) feed the planner during autonomous runs, triggering replans after failures and persisting revised DAGs with incremented versions for CLI/GUI display. Each autonomy cycle is also recorded with duration, reflection signals, and plan versions so runaway loops can be stopped by failure or timeout guards.
+- **Plan publication for GUI**: Executed task graphs are mirrored into simplified plan records under the `plans` namespace, enabling the GUI plan panel to render current steps instead of showing “No plan available.”
+- **State inspection**: `/state` in the CLI summarizes latest plan, execution, policy, and reflection records (with correlation IDs), and the GUI includes a pipeline state panel reading from `plans`, `execution*`, `reflection.*`, `policy_events`, and `pipeline_events`.
 
 ## Quickstart
 

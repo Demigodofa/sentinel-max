@@ -25,6 +25,7 @@ class ControllerBridge:
         on_plan_update: Optional[PlanUpdateCallback] = None,
         on_log_update: Optional[LogUpdateCallback] = None,
         on_agent_response: Optional[AgentResponseCallback] = None,
+        on_state_update: Optional[Callable[[dict], None]] = None,
     ) -> None:
         self.controller = controller or SentinelController()
         self._lock = threading.RLock()
@@ -32,6 +33,7 @@ class ControllerBridge:
         self.on_plan_update = on_plan_update
         self.on_log_update = on_log_update
         self.on_agent_response = on_agent_response
+        self.on_state_update = on_state_update
         self._seen_log_keys: set[str] = set()
 
     # ------------------------------------------------------------------
@@ -53,6 +55,7 @@ class ControllerBridge:
     def refresh_state(self) -> None:
         self.refresh_plan()
         self.refresh_logs()
+        self._executor.submit(self._emit_state_update)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -65,6 +68,7 @@ class ControllerBridge:
             self.on_agent_response(response)
         self._emit_plan_update()
         self._emit_log_update()
+        self._emit_state_update()
 
     def _emit_plan_update(self) -> None:
         if not self.on_plan_update:
@@ -77,6 +81,12 @@ class ControllerBridge:
             return
         logs = self._collect_logs(limit=100)
         self.on_log_update(logs)
+
+    def _emit_state_update(self) -> None:
+        if not self.on_state_update:
+            return
+        state = self._collect_state_data()
+        self.on_state_update(state)
 
     def _collect_plan_steps(self, limit: int = 1) -> List[PlanStep]:
         records = self.controller.memory.recall_recent(limit=limit, namespace="plans")
@@ -115,6 +125,12 @@ class ControllerBridge:
             if record_key:
                 self._seen_log_keys.add(record_key)
         return lines
+
+    def _collect_state_data(self, limit: int = 5) -> dict:
+        try:
+            return self.controller.pipeline_snapshot(limit=limit)
+        except Exception:
+            return {}
 
     def shutdown(self) -> None:
         self._executor.shutdown(wait=False)

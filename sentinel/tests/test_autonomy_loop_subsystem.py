@@ -17,7 +17,7 @@ class _StubWorker(Worker):
         registry = ToolRegistry()
         super().__init__(registry, Sandbox())
 
-    def run(self, graph: TaskGraph):
+    def run(self, graph: TaskGraph, correlation_id=None):
         trace = ExecutionTrace()
         for node in graph:
             trace.add(ExecutionResult(node=node, success=True, output=node.id))

@@ -4,12 +4,14 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Dict, Optional, TYPE_CHECKING, Iterable, Tuple, List
+from typing import Dict, Optional, TYPE_CHECKING, Iterable, Tuple
+from uuid import uuid4
 
 if TYPE_CHECKING:
     from sentinel.agent_core.autonomy import AutonomyLoop
 from sentinel.agent_core.base import ExecutionTrace
 from sentinel.logging.logger import get_logger
+from sentinel.logging.stage_logger import PipelineStageLogger
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.planning.adaptive_planner import AdaptivePlanner
 from sentinel.simulation.sandbox import SimulationSandbox
@@ -64,10 +66,11 @@ class ConversationController:
         self.auto_budget_turns: Optional[int] = 0
         self.auto_deadline_epoch: float = 0.0
 
-    def handle_input(self, message: MessageDTO | str) -> Dict[str, object]:
-        dto = MessageDTO.coerce(message)
-        payload = dto.to_payload()
-        logger.info("Conversation pipeline received envelope: %s", payload)
+    def handle_input(self, text: str) -> Dict[str, object]:
+        logger.info("Conversation pipeline received: %s", text)
+        correlation_id = str(uuid4())
+        stage_logger = PipelineStageLogger(self.memory, correlation_id)
+        self.planner.policy_engine.attach_correlation_id(correlation_id)
         session_context = self.dialog_manager.get_session_context()
         self.memory.store_fact(
             "goals",
@@ -85,6 +88,8 @@ class ConversationController:
         raw = text.strip()
         normalized_text = raw.lower()
 
+        stage_logger.log_ingest("input", raw=raw)
+
         if self.auto_mode_enabled and self._auto_expired():
             self._disable_auto_mode()
 
@@ -92,18 +97,18 @@ class ConversationController:
         # 1) Slash commands ALWAYS win (do not send to intent engine)
         # ------------------------------------------------------------
         if normalized_text.startswith("/"):
-            cmd_result = self._handle_slash_command(raw, session_context)
+            cmd_result = self._handle_slash_command(raw, session_context, stage_logger)
             if cmd_result is not None:
                 return cmd_result
 
         if normalized_text.startswith("/tool"):
-            return self._handle_direct_tool_call(text, session_context)
+            return self._handle_direct_tool_call(text, session_context, stage_logger)
 
         if self.pending_plan and self._is_execution_confirmation(normalized_text):
             turns, ttl = self._parse_auto_budget(normalized_text)
             if turns is not None or ttl is not None:
                 self._arm_auto_mode(turns=turns, ttl_seconds=ttl or 3600)
-            return self._execute_pending_plan(text, session_context)
+            return self._execute_pending_plan(text, session_context, stage_logger)
 
         if self.pending_plan and self._is_cancel(normalized_text):
             self.pending_plan = None
@@ -125,7 +130,7 @@ class ConversationController:
                 self._arm_auto_mode(turns=turns, ttl_seconds=ttl or 3600)
             goal_to_execute = self.pending_goal
             self.pending_goal = None
-            return self._execute_with_goal(text, goal_to_execute, session_context)
+            return self._execute_with_goal(text, goal_to_execute, session_context, stage_logger)
 
         if self.pending_goal and self._is_cancel(normalized_text):
             self.pending_goal = None
@@ -148,7 +153,7 @@ class ConversationController:
             self.pending_plan = {"normalized_goal": normalized_goal}
             if self.auto_mode_enabled and not self._auto_expired():
                 self._consume_auto_budget()
-                return self._execute_pending_plan(text, session_context)
+                return self._execute_pending_plan(text, session_context, stage_logger)
             response = self.dialog_manager.propose_plan(self.pending_goal_text)
             response = (
                 f"{response}\n\n"
@@ -209,7 +214,7 @@ class ConversationController:
             if self.auto_mode_enabled and not self._auto_expired():
                 self.pending_goal = None
                 self._consume_auto_budget()
-                return self._execute_with_goal(text, tentative_goal, session_context)
+                return self._execute_with_goal(text, tentative_goal, session_context, stage_logger)
             self.pending_goal = tentative_goal
             response = self.dialog_manager.propose_plan(tentative_goal.as_goal_statement())
             response = (
@@ -236,9 +241,9 @@ class ConversationController:
             if self.pending_goal:
                 goal_to_execute = self.pending_goal
                 self.pending_goal = None
-                return self._execute_with_goal(text, goal_to_execute, session_context)
+                return self._execute_with_goal(text, goal_to_execute, session_context, stage_logger)
             if self.pending_plan:
-                return self._execute_pending_plan(text, session_context)
+                return self._execute_pending_plan(text, session_context, stage_logger)
             response = self.dialog_manager.respond_conversationally(text)
             self.dialog_manager.record_turn(text, response, context=session_context)
             return {
@@ -285,7 +290,10 @@ class ConversationController:
         self.auto_deadline_epoch = 0.0
 
     def _handle_slash_command(
-        self, raw: str, session_context: Dict[str, object]
+        self,
+        raw: str,
+        session_context: Dict[str, object],
+        stage_logger: PipelineStageLogger | None = None,
     ) -> Optional[Dict[str, object]]:
         """
         Slash commands are UI/ops controls (not "tasks").
@@ -456,15 +464,15 @@ class ConversationController:
                 self.pending_plan = None
                 self.pending_goal_text = None
                 self._disable_auto_mode()
-                return self._execute_with_goal(remainder, normalized_goal, session_context)
+                return self._execute_with_goal(remainder, normalized_goal, session_context, stage_logger)
 
         if lower == "/auto":
             if self.pending_goal is not None:
                 goal_to_execute = self.pending_goal
                 self.pending_goal = None
-                return self._execute_with_goal(text, goal_to_execute, session_context)
+                return self._execute_with_goal(text, goal_to_execute, session_context, stage_logger)
             if self.pending_plan:
-                return self._execute_pending_plan(text, session_context)
+                return self._execute_pending_plan(text, session_context, stage_logger)
             response = self.dialog_manager.format_agent_response(
                 "No pending plan to run. Ask for a task first, or use `/auto <task>`."
             )
@@ -479,11 +487,11 @@ class ConversationController:
 
         if lower in {"/run", "/execute"}:
             if self.pending_plan:
-                return self._execute_pending_plan(text, session_context)
+                return self._execute_pending_plan(text, session_context, stage_logger)
             if self.pending_goal is not None:
                 goal_to_execute = self.pending_goal
                 self.pending_goal = None
-                return self._execute_with_goal(text, goal_to_execute, session_context)
+                return self._execute_with_goal(text, goal_to_execute, session_context, stage_logger)
             response = self.dialog_manager.format_agent_response("No pending plan to run.")
             self.dialog_manager.record_turn(text, response, context=session_context)
             return {
@@ -549,7 +557,11 @@ class ConversationController:
     # Internal helpers
     # ------------------------------------------------------------------
     def _execute_with_goal(
-        self, user_input: str, normalized_goal: NormalizedGoal, session_context: Dict[str, object]
+        self,
+        user_input: str,
+        normalized_goal: NormalizedGoal,
+        session_context: Dict[str, object],
+        stage_logger: PipelineStageLogger,
     ) -> Dict[str, object]:
         self.dialog_manager.remember_goal(normalized_goal)
         clarifications = normalized_goal.ambiguities
@@ -574,8 +586,13 @@ class ConversationController:
             }
 
         task_graph = self.nl_to_taskgraph.translate(normalized_goal)
+        stage_logger.log_plan(
+            "task_graph_generated",
+            nodes=len(task_graph.nodes),
+            goal=normalized_goal.as_goal_statement(),
+        )
         enriched_graph = self.multi_agent_engine.coordinate(task_graph)
-        trace = self._execute_graph(normalized_goal, enriched_graph)
+        trace = self._execute_graph(normalized_goal, enriched_graph, stage_logger)
         response = self._final_response(trace, normalized_goal, enriched_graph)
         self.dialog_manager.record_turn(
             user_input,
@@ -593,7 +610,9 @@ class ConversationController:
             "dialog_context": session_context,
         }
 
-    def _execute_pending_plan(self, user_input: str, session_context: Dict[str, object]) -> Dict[str, object]:
+    def _execute_pending_plan(
+        self, user_input: str, session_context: Dict[str, object], stage_logger: PipelineStageLogger
+    ) -> Dict[str, object]:
         plan = self.pending_plan or {}
         normalized_goal = plan.get("normalized_goal") or self.pending_goal
         self.pending_plan = None
@@ -609,9 +628,11 @@ class ConversationController:
                 "trace": None,
                 "dialog_context": session_context,
             }
-        return self._execute_with_goal(user_input, normalized_goal, session_context)
+        return self._execute_with_goal(user_input, normalized_goal, session_context, stage_logger)
 
-    def _handle_direct_tool_call(self, text: str, session_context: Dict[str, object]) -> Dict[str, object]:
+    def _handle_direct_tool_call(
+        self, text: str, session_context: Dict[str, object], stage_logger: PipelineStageLogger
+    ) -> Dict[str, object]:
         parts = text.strip().split(" ", 2)
         if len(parts) < 3:
             response = self.dialog_manager.format_agent_response("Usage: /tool <name> <json_args>")
@@ -665,6 +686,12 @@ class ConversationController:
             response_text = f"Tool '{name}' executed successfully:\n{output}"
         except Exception as exc:
             response_text = f"Tool '{name}' failed: {exc}"
+        stage_logger.log_execute(
+            "tool_call",
+            tool=name,
+            success="failed" not in response_text,
+            correlation_id=stage_logger.correlation_id,
+        )
         response = self.dialog_manager.format_agent_response(response_text)
         self.dialog_manager.record_turn(text, response, context=session_context)
         return {
@@ -679,7 +706,9 @@ class ConversationController:
         task_verbs = ("search", "browse", "create", "build", "write", "fix", "debug", "run")
         return normalized_text.startswith(task_verbs) or "web" in normalized_text or "internet" in normalized_text
 
-    def _execute_graph(self, normalized_goal: NormalizedGoal, task_graph) -> ExecutionTrace:
+    def _execute_graph(
+        self, normalized_goal: NormalizedGoal, task_graph, stage_logger: PipelineStageLogger
+    ) -> ExecutionTrace:
         goal_text = normalized_goal.as_goal_statement()
         self.memory.store_fact(
             "task_graphs",
@@ -689,7 +718,7 @@ class ConversationController:
                 "metadata": task_graph.metadata,
                 "nodes": [node.__dict__ for node in task_graph],
             },
-            metadata={"domain": normalized_goal.domain},
+            metadata={"domain": normalized_goal.domain, "correlation_id": stage_logger.correlation_id},
         )
         # Also publish a simplified plan for the GUI plan panel
         steps = []
@@ -703,8 +732,27 @@ class ConversationController:
                     "depends_on": getattr(node, "depends_on", []) or getattr(node, "requires", []) or [],
                 }
             )
-        self.planner.record_plan_snapshot(goal_text, steps, metadata={"domain": normalized_goal.domain})
-        trace = self.autonomy.run_graph(task_graph, goal_text)
+
+        self.memory.store_fact(
+            "plans",
+            key=None,
+            value={"goal": goal_text, "steps": steps, "correlation_id": stage_logger.correlation_id},
+            metadata={"domain": normalized_goal.domain, "correlation_id": stage_logger.correlation_id},
+        )
+        trace = self.autonomy.run_graph(task_graph, goal_text, correlation_id=stage_logger.correlation_id)
+        stage_logger.log_policy(
+            "policy_checked",
+            events=len(self.memory.recall_recent(limit=5, namespace="policy_events")),
+        )
+        stage_logger.log_execute(
+            "execution_complete",
+            success=not bool(trace.failed_nodes),
+            batches=len(trace.batches),
+        )
+        stage_logger.log_reflect(
+            "reflection_recorded",
+            reflections=len(self.memory.recall_recent(namespace="reflection.operational")),
+        )
         return trace
 
     def _final_response(
