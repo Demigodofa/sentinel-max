@@ -13,6 +13,7 @@ from sentinel.gui.widgets.chat_log import ChatLog
 from sentinel.gui.widgets.input_panel import InputPanel
 from sentinel.gui.widgets.plan_panel import PlanPanel
 from sentinel.gui.widgets.log_panel import LogPanel
+from sentinel.gui.widgets.state_panel import StatePanel
 
 
 def run_gui_app() -> None:
@@ -55,9 +56,11 @@ class SentinelApp:
             on_plan_update=lambda steps: self._on_plan_update(steps),
             on_log_update=lambda logs: self._on_log_update(logs),
             on_agent_response=lambda text: self._on_agent_response(text),
+            on_state_update=lambda state: self._on_state_update(state),
         )
         self.plan_panel: PlanPanel | None = None
         self.log_panel: LogPanel | None = None
+        self.state_panel: StatePanel | None = None
         if build_layout:
             self._build_layout()
         self.root.protocol("WM_DELETE_WINDOW", self._shutdown)
@@ -79,6 +82,9 @@ class SentinelApp:
 
         self.plan_panel = PlanPanel(side_panel, theme=self.theme)
         self.plan_panel.pack(fill="both", expand=True)
+
+        self.state_panel = StatePanel(side_panel, theme=self.theme)
+        self.state_panel.pack(fill="both", expand=True, pady=(self.theme["spacing"]["pad_small"], 0))
 
         self.log_panel = LogPanel(side_panel, theme=self.theme)
         self.log_panel.pack(fill="both", expand=True, pady=(self.theme["spacing"]["pad_small"], 0))
@@ -109,6 +115,11 @@ class SentinelApp:
         if not self.log_panel:
             return
         self.root.after(0, lambda: self.log_panel.append_logs(logs))
+
+    def _on_state_update(self, state) -> None:
+        if not self.state_panel:
+            return
+        self.root.after(0, lambda: self.state_panel.update_state(state))
 
     def _shutdown(self) -> None:
         try:

@@ -40,9 +40,13 @@ class Worker:
         self.simulation_sandbox = simulation_sandbox
         self.world_model = world_model
         self.approval_gate = approval_gate
+        self.correlation_id: str | None = None
 
-    def run(self, graph: TaskGraph) -> ExecutionTrace:
+    def run(self, graph: TaskGraph, correlation_id: str | None = None) -> ExecutionTrace:
         logger.info("Worker executing task graph with %d nodes", len(graph.nodes))
+        self.correlation_id = correlation_id
+        if correlation_id is not None:
+            self.executor.set_correlation_id(correlation_id)
         return self.executor.execute(graph)
 
     # ------------------------------------------------------------------
@@ -83,6 +87,7 @@ class Worker:
                 "error": result.error,
                 "output": result.output,
                 "type": "real_execution",
+                "correlation_id": self.correlation_id,
             }
             try:
                 self.memory.store_fact("execution_real", key=node.id, value=metadata)

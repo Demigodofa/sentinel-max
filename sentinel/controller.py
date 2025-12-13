@@ -194,6 +194,24 @@ class SentinelController:
             "world_model": world_model_state,
         }
 
+    def pipeline_snapshot(self, limit: int = 5) -> dict[str, list[dict[str, Any]]]:
+        """Collect recent plan, execution, reflection, and policy records."""
+
+        namespaces = [
+            "plans",
+            "execution",
+            "execution_real",
+            "policy_events",
+            "pipeline_events",
+        ]
+        reflections = [ns for ns in self.memory.symbolic.list_namespaces() if ns.startswith("reflection")]
+        snapshot: dict[str, list[dict[str, Any]]] = {}
+        for ns in namespaces + reflections:
+            records = self.memory.recall_recent(limit=limit, namespace=ns)
+            if records:
+                snapshot[ns] = records
+        return snapshot
+
     # ------------------------------------------------------------------
     # CLI-only helper commands
     # ------------------------------------------------------------------
@@ -234,5 +252,21 @@ class SentinelController:
                 return str(output)
             except Exception as exc:  # pragma: no cover
                 return f"Tool '{tool_name}' execution failed: {exc}"
+
+        if message.strip() == "/state":
+            snapshot = self.pipeline_snapshot(limit=3)
+            if not snapshot:
+                return "No pipeline state available."
+            lines = []
+            for namespace, records in snapshot.items():
+                lines.append(f"[{namespace}]")
+                for record in records:
+                    meta = record.get("metadata", {}) or {}
+                    correlation_id = meta.get("correlation_id") or record.get("value", {}).get("correlation_id") if isinstance(record.get("value"), dict) else None
+                    summary = record.get("value")
+                    if isinstance(summary, dict):
+                        summary = summary.get("message") or summary.get("summary") or str(summary)
+                    lines.append(f"  - {correlation_id or 'n/a'} :: {summary}")
+            return "\n".join(lines)
 
         return None

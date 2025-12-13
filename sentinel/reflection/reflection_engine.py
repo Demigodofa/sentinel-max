@@ -24,7 +24,13 @@ class ReflectionEngine:
         self.policy_engine = policy_engine
         self.memory_context_builder = memory_context_builder or MemoryContextBuilder(memory)
 
-    def reflect(self, trace: Any, reflection_type: str = "operational", goal: str | None = None) -> Dict[str, Any]:
+    def reflect(
+        self,
+        trace: Any,
+        reflection_type: str = "operational",
+        goal: str | None = None,
+        correlation_id: str | None = None,
+    ) -> Dict[str, Any]:
         issues = self._detect_issues(trace)
         simulation_insights = self._simulation_insights(trace)
         if simulation_insights.get("warnings"):
@@ -45,8 +51,9 @@ class ReflectionEngine:
             "reflection_type": reflection_type,
             "confidence": self._confidence(trace, issues),
             "simulation": simulation_insights,
+            "correlation_id": correlation_id,
         }
-        self._persist(reflection, reflection_type)
+        self._persist(reflection, reflection_type, correlation_id=correlation_id)
         decision = self.policy_engine.advise(issues)
         if not decision.allowed:
             reflection["policy_advice"] = decision.to_dict()
@@ -117,12 +124,16 @@ class ReflectionEngine:
         _, context_block = self.memory_context_builder.build_context(goal, "reflection", limit=3)
         return context_block
 
-    def _persist(self, reflection: Dict[str, Any], reflection_type: str) -> None:
+    def _persist(self, reflection: Dict[str, Any], reflection_type: str, correlation_id: str | None = None) -> None:
         try:
             self.memory.store_text(
                 str(reflection),
                 namespace=f"reflection.{reflection_type}",
-                metadata={"summary": reflection.get("summary", ""), "confidence": reflection.get("confidence")},
+                metadata={
+                    "summary": reflection.get("summary", ""),
+                    "confidence": reflection.get("confidence"),
+                    "correlation_id": correlation_id,
+                },
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Failed to persist reflection: %s", exc)

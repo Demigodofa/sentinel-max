@@ -184,6 +184,12 @@ class TopologicalExecutor:
         self.policy_engine = policy_engine
         self.simulation_sandbox = simulation_sandbox
         self.world_model = world_model
+        self.correlation_id: str | None = None
+
+    def set_correlation_id(self, correlation_id: str | None) -> None:
+        """Propagate a correlation ID used for execution logging."""
+
+        self.correlation_id = correlation_id
 
     def execute(self, graph: TaskGraph, available_inputs: Optional[Dict[str, Any]] = None) -> ExecutionTrace:
         available_inputs = available_inputs or {}
@@ -371,6 +377,7 @@ class TopologicalExecutor:
                     "task": result.node.id,
                     "tool": result.node.tool,
                     "success": result.success,
+                    "correlation_id": self.correlation_id,
                 },
             )
         except Exception as exc:  # pragma: no cover - defensive logging
@@ -399,6 +406,7 @@ class TopologicalExecutor:
                     "benchmark": simulation.benchmark,
                     "warnings": simulation.warnings,
                 },
+                metadata={"correlation_id": self.correlation_id},
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Failed to persist simulation result: %s", exc)

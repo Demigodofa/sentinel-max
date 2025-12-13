@@ -106,20 +106,44 @@ class AutonomyLoop:
         graph: TaskGraph,
         goal: str,
         exit_conditions: Optional[Dict[str, Any]] = None,
+        *,
+        correlation_id: str | None = None,
     ) -> ExecutionTrace:
         """Execute a pre-built task graph and record reflections."""
 
         exit_conditions = exit_conditions or {}
         trace = ExecutionTrace()
         self._running = True
-        self.memory.store_text(goal, namespace="goals", metadata={"type": "normalized"})
-        cycle_trace = self.worker.run(graph)
+        self.memory.store_text(
+            goal,
+            namespace="goals",
+            metadata={"type": "normalized", "correlation_id": correlation_id},
+        )
+        cycle_trace = self.worker.run(graph, correlation_id=correlation_id)
         self._merge_trace(trace, cycle_trace)
-        self._record_reflection(cycle_trace, "operational", "graph-execution", goal)
+        self._record_reflection(
+            cycle_trace,
+            "operational",
+            "graph-execution",
+            goal,
+            correlation_id=correlation_id,
+        )
         if not cycle_trace.failed_nodes and self._goal_completed(exit_conditions, cycle_trace):
-            self._record_reflection(cycle_trace, "user-preference", "graph-complete", goal)
+            self._record_reflection(
+                cycle_trace,
+                "user-preference",
+                "graph-complete",
+                goal,
+                correlation_id=correlation_id,
+            )
         else:
-            self._record_reflection(cycle_trace, "self-model", "graph-followup", goal)
+            self._record_reflection(
+                cycle_trace,
+                "self-model",
+                "graph-followup",
+                goal,
+                correlation_id=correlation_id,
+            )
         self.stop()
         return trace
 
@@ -136,14 +160,22 @@ class AutonomyLoop:
         main.batches.extend(addition.batches)
 
     def _record_reflection(
-        self, trace: ExecutionTrace, reflection_type: str, context: str, goal: str | None
+        self,
+        trace: ExecutionTrace,
+        reflection_type: str,
+        context: str,
+        goal: str | None,
+        *,
+        correlation_id: str | None = None,
     ) -> Dict[str, Any] | None:
         try:
-            reflection = self.reflector.reflect(trace, reflection_type=reflection_type, goal=goal)
+            reflection = self.reflector.reflect(
+                trace, reflection_type=reflection_type, goal=goal, correlation_id=correlation_id
+            )
             self.memory.store_text(
                 str(reflection),
                 namespace=f"reflection.{reflection_type}",
-                metadata={"context": context, "goal": goal},
+                metadata={"context": context, "goal": goal, "correlation_id": correlation_id},
             )
             self.last_reflection = reflection
             return reflection

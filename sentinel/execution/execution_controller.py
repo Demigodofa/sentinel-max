@@ -47,32 +47,34 @@ class ExecutionController:
     # ------------------------------------------------------------------
     def request_execution(self, taskgraph: TaskGraph, mode: ExecutionMode, parameters: Dict[str, Any]):
         mode = ExecutionMode(mode)
+        correlation_id = parameters.get("correlation_id") if isinstance(parameters, dict) else None
         if mode is ExecutionMode.UNTIL_COMPLETE:
-            return self.execute_until_complete(taskgraph)
+            return self.execute_until_complete(taskgraph, correlation_id=correlation_id)
         if mode is ExecutionMode.FOR_TIME:
-            return self.execute_for_time(taskgraph, parameters.get("seconds", 0))
+            return self.execute_for_time(taskgraph, parameters.get("seconds", 0), correlation_id=correlation_id)
         if mode is ExecutionMode.UNTIL_NODE:
-            return self.execute_until_node(taskgraph, parameters.get("target_node_id"))
+            return self.execute_until_node(taskgraph, parameters.get("target_node_id"), correlation_id=correlation_id)
         if mode is ExecutionMode.FOR_CYCLES:
-            return self.execute_for_cycles(taskgraph, parameters.get("max_cycles", 0))
+            return self.execute_for_cycles(taskgraph, parameters.get("max_cycles", 0), correlation_id=correlation_id)
         if mode is ExecutionMode.UNTIL_CONDITION:
-            return self.execute_until_condition(taskgraph, parameters.get("condition_fn"))
+            return self.execute_until_condition(taskgraph, parameters.get("condition_fn"), correlation_id=correlation_id)
         if mode is ExecutionMode.WITH_CHECKINS:
-            return self.execute_with_checkins(taskgraph, parameters.get("interval_seconds", 1))
+            return self.execute_with_checkins(taskgraph, parameters.get("interval_seconds", 1), correlation_id=correlation_id)
         raise ValueError(f"Unsupported execution mode: {mode}")
 
     # ------------------------------------------------------------------
-    def execute_until_complete(self, taskgraph: TaskGraph) -> ExecutionTrace:
-        return self._execute_graph(taskgraph)
+    def execute_until_complete(self, taskgraph: TaskGraph, *, correlation_id: str | None = None) -> ExecutionTrace:
+        return self._execute_graph(taskgraph, correlation_id=correlation_id)
 
-    def execute_for_time(self, taskgraph: TaskGraph, seconds: float) -> ExecutionTrace:
+    def execute_for_time(self, taskgraph: TaskGraph, seconds: float, *, correlation_id: str | None = None) -> ExecutionTrace:
         deadline = time.time() + max(seconds, 0)
         return self._execute_graph(
             taskgraph,
             should_stop=lambda trace, elapsed, cycles, node, result: time.time() >= deadline,
+            correlation_id=correlation_id,
         )
 
-    def execute_until_node(self, taskgraph: TaskGraph, target_node_id: str) -> ExecutionTrace:
+    def execute_until_node(self, taskgraph: TaskGraph, target_node_id: str, *, correlation_id: str | None = None) -> ExecutionTrace:
         if not target_node_id:
             raise ValueError("target_node_id is required")
         return self._execute_graph(
@@ -80,27 +82,30 @@ class ExecutionController:
             should_stop=lambda trace, elapsed, cycles, node, result: bool(
                 node and node.id == target_node_id
             ),
+            correlation_id=correlation_id,
         )
 
-    def execute_for_cycles(self, taskgraph: TaskGraph, max_cycles: int) -> ExecutionTrace:
+    def execute_for_cycles(self, taskgraph: TaskGraph, max_cycles: int, *, correlation_id: str | None = None) -> ExecutionTrace:
         limit = max(0, max_cycles)
         return self._execute_graph(
             taskgraph,
             should_stop=lambda trace, elapsed, cycles, node, result: cycles >= limit,
+            correlation_id=correlation_id,
         )
 
     def execute_until_condition(
-        self, taskgraph: TaskGraph, condition_fn: Optional[Callable[[ExecutionTrace], bool]]
+        self, taskgraph: TaskGraph, condition_fn: Optional[Callable[[ExecutionTrace], bool]], *, correlation_id: str | None = None
     ) -> ExecutionTrace:
         condition_fn = condition_fn or (lambda trace: False)
         return self._execute_graph(
             taskgraph,
             should_stop=lambda trace, elapsed, cycles, node, result: condition_fn(trace),
+            correlation_id=correlation_id,
         )
 
-    def execute_with_checkins(self, taskgraph: TaskGraph, interval_seconds: float) -> ExecutionTrace:
+    def execute_with_checkins(self, taskgraph: TaskGraph, interval_seconds: float, *, correlation_id: str | None = None) -> ExecutionTrace:
         interval_seconds = max(interval_seconds, 0.1)
-        return self._execute_graph(taskgraph, checkin_interval=interval_seconds)
+        return self._execute_graph(taskgraph, checkin_interval=interval_seconds, correlation_id=correlation_id)
 
     # ------------------------------------------------------------------
     def _execute_graph(
@@ -110,8 +115,15 @@ class ExecutionController:
             Callable[[ExecutionTrace, float, int, Optional[TaskNode], Optional[ExecutionResult]], bool]
         ] = None,
         checkin_interval: Optional[float] = None,
+        correlation_id: str | None = None,
     ) -> ExecutionTrace:
         self.validator.validate(graph)
+        self.worker.correlation_id = correlation_id
+        if hasattr(self.worker, "executor"):
+            try:
+                self.worker.executor.set_correlation_id(correlation_id)
+            except AttributeError:
+                pass
         produced_by = self._build_produced_map(graph)
         dependencies = self._build_dependency_graph(graph, produced_by)
         indegree = {node_id: len(deps) for node_id, deps in dependencies.items()}

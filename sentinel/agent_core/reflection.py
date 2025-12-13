@@ -82,15 +82,27 @@ class Reflector:
         self.memory = memory
         self.engine = reflection_engine
 
-    def reflect(self, trace: ExecutionTrace, reflection_type: str = "operational", goal: str | None = None) -> Dict[str, Any]:
-        reflection = self.engine.reflect(trace, reflection_type=reflection_type, goal=goal)
+    def reflect(
+        self,
+        trace: ExecutionTrace,
+        reflection_type: str = "operational",
+        goal: str | None = None,
+        correlation_id: str | None = None,
+    ) -> Dict[str, Any]:
+        reflection = self.engine.reflect(
+            trace, reflection_type=reflection_type, goal=goal, correlation_id=correlation_id
+        )
         legacy_summary = summarize_trace(trace)
         try:
             namespace = f"reflection.{reflection_type}" if reflection_type else "reflection"
             self.memory.store_text(
                 legacy_summary,
                 namespace=namespace,
-                metadata={"summary": True, "reflection_type": reflection_type},
+                metadata={
+                    "summary": True,
+                    "reflection_type": reflection_type,
+                    "correlation_id": correlation_id,
+                },
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Failed to persist legacy reflection summary: %s", exc)

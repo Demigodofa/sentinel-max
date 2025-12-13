@@ -75,6 +75,7 @@ class PolicyEngine:
             "privilege escalation",
             "harm",
         ]
+        self.correlation_id: str | None = None
 
     def assert_path_in_sandbox(self, path: str) -> None:
         """
@@ -92,6 +93,11 @@ class PolicyEngine:
         self._check_metadata(graph, registry)
         self._enforce_parallel_limit(graph)
         self._check_artifacts(graph)
+        self._record_event(
+            "allow",
+            "Plan validated",
+            {"nodes": len(list(graph)), "parallel_limit": self.parallel_limit},
+        )
 
     def _check_metadata(self, graph: TaskGraph, registry: ToolRegistry) -> None:
         for node in graph:
@@ -211,11 +217,25 @@ class PolicyEngine:
     # ------------------------------------------------------------------
     # Utilities
     # ------------------------------------------------------------------
+    def attach_correlation_id(self, correlation_id: str | None) -> None:
+        """Set the correlation ID used for recorded policy events."""
+
+        self.correlation_id = correlation_id
+
     def _record_event(self, event_type: str, message: str, details: Optional[Dict[str, Any]] = None) -> None:
-        payload = {"event": event_type, "message": message, "details": details or {}}
+        payload = {
+            "event": event_type,
+            "message": message,
+            "details": details or {},
+            "correlation_id": self.correlation_id,
+        }
         try:
             if self.memory is not None:
-                self.memory.store_text(str(payload), namespace="policy_events", metadata=payload)
+                self.memory.store_text(
+                    str(payload),
+                    namespace="policy_events",
+                    metadata=payload,
+                )
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Failed to persist policy event: %s", exc)
 
