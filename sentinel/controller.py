@@ -125,7 +125,9 @@ class SentinelController:
         # Ensure a real web search tool exists even if older registry constants exist.
         # If a web_search tool is already registered, registry should skip/ignore duplicates.
 
-        self.tool_registry.register(WebSearchTool())
+        tool = WebSearchTool()
+            if not self.tool_registry.has_tool(tool.name):
+        self.tool_registry.register(tool)
         self.tool_registry.register(INTERNET_EXTRACTOR_TOOL)
         self.tool_registry.register(CODE_ANALYZER_TOOL)
         self.tool_registry.register(MICROSERVICE_BUILDER_TOOL)
