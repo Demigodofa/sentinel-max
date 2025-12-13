@@ -2,21 +2,23 @@
 from __future__ import annotations
 
 import sys
+import tkinter as tk
+from tkinter import ttk
+
 IS_DARWIN = sys.platform == "darwin"
+
 
 def _platform_seqs(ctrl_seq: str, cmd_seq: str):
     # On Windows/Linux, do NOT bind <Command-*> because it can behave like a stuck modifier.
     return (ctrl_seq, cmd_seq) if IS_DARWIN else (ctrl_seq,)
 
-import tkinter as tk
-from tkinter import ttk
-
 
 class ChatLog(ttk.Frame):
     """
     A scrollable text transcript that supports:
-      - selection with right-click copy/select-all options
-      - readable, high contrast colors
+      - selection + copy
+      - right-click context menu
+      - readable colors via theme
     """
 
     def __init__(self, master: tk.Misc, theme: dict) -> None:
@@ -37,13 +39,13 @@ class ChatLog(ttk.Frame):
             pady=10,
             bg=c["panel_bg"],
             fg=c["text"],
-            insertbackground=c["entry_insert"],
-            selectbackground=c["selection_bg"],
-            selectforeground=c["selection_fg"],
+            insertbackground=c.get("entry_insert", c.get("accent", "#ffffff")),
+            selectbackground=c.get("selection_bg", c.get("accent", "#444444")),
+            selectforeground=c.get("selection_fg", c.get("panel_bg", "#000000")),
             relief="flat",
             highlightthickness=1,
-            highlightbackground=c["panel_border"],
-            highlightcolor=c["panel_border"],
+            highlightbackground=c.get("panel_border", c.get("muted", "#444444")),
+            highlightcolor=c.get("panel_border", c.get("muted", "#444444")),
         )
         self.text.configure(font=self.fonts["body"])
 
@@ -56,33 +58,36 @@ class ChatLog(ttk.Frame):
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
 
-        # Tags for simple readability
+        # Tags for readability
         self.text.tag_configure("user", spacing1=6, spacing3=10)
         self.text.tag_configure("agent", spacing1=6, spacing3=10)
-        self.text.tag_configure("meta", foreground=c["muted"], font=self.fonts["mono"])
+        self.text.tag_configure("meta", foreground=c.get("muted", "#888888"), font=self.fonts["mono"])
 
-        # Make it read-only but still selectable
+        # Make it read-only but still selectable/copyable
         self.text.configure(state="disabled")
 
-
-        # Clipboard bindings
+        # Clipboard/key bindings
         for seq in _platform_seqs("<Control-c>", "<Command-c>"):
             self.text.bind(seq, self._copy)
         for seq in _platform_seqs("<Control-a>", "<Command-a>"):
             self.text.bind(seq, self._select_all)
-        for seq in _platform_seqs("<Control-v>", "<Command-v>"):
-            self.text.bind(seq, self._paste_blocked)
-        for seq in _platform_seqs("<Control-x>", "<Command-x>"):
-            self.text.bind(seq, self._cut_blocked)
 
-        self.text.bind("<Button-3>", self._open_menu)  # right click
+        # Block mutation shortcuts (read-only log)
+        for seq in _platform_seqs("<Control-v>", "<Command-v>"):
+            self.text.bind(seq, self._blocked)
+        for seq in _platform_seqs("<Control-x>", "<Command-x>"):
+            self.text.bind(seq, self._blocked)
+
+        # Right click menu
+        self.text.bind("<Button-3>", self._open_menu)  # Windows/Linux
+        self.text.bind("<Control-Button-1>", self._open_menu)  # macOS-ish fallback
 
         self._menu = tk.Menu(self, tearoff=0)
         self._menu.add_command(label="Copy", command=self._copy_menu)
-        self._menu.add_command(label="Paste", command=self._paste_menu)
-        self._menu.add_command(label="Cut", command=self._cut_menu)
-        self._menu.add_separator()
         self._menu.add_command(label="Select All", command=self._select_all_menu)
+        self._menu.add_separator()
+        self._menu.add_command(label="Cut (disabled)", command=self._blocked_menu)
+        self._menu.add_command(label="Paste (disabled)", command=self._blocked_menu)
 
     def append(self, who: str, message: str) -> None:
         """
@@ -93,33 +98,22 @@ class ChatLog(ttk.Frame):
 
         self.text.configure(state="normal")
         self.text.insert("end", prefix + message.strip() + "\n", tag)
-        self.text.configure(state="normal")
         self.text.see("end")
+        self.text.configure(state="disabled")
 
-    def _copy_menu(self) -> None:
+    # ---------- handlers ----------
+    def _copy(self, event=None):  # type: ignore[override]
         self.text.event_generate("<<Copy>>")
-
-    def _cut_menu(self) -> None:
-        self.text.event_generate("<<Copy>>")
-
-    def _paste_menu(self) -> None:
-        # Output is read-only; paste falls back to copying clipboard text into selection without mutation.
-        try:
-            clip = self.clipboard_get()
-            if clip:
-                self.text.clipboard_clear()
-                self.text.clipboard_append(clip)
-        except Exception:
-            pass
-
+        return "break"
 
     def _select_all(self, event=None):  # type: ignore[override]
         self.text.tag_add("sel", "1.0", "end-1c")
+        self.text.mark_set("insert", "end-1c")
+        self.text.see("insert")
         return "break"
 
-
-    def _select_all_menu(self) -> None:
-        self.text.tag_add("sel", "1.0", "end-1c")
+    def _blocked(self, event=None):  # type: ignore[override]
+        return "break"
 
     def _open_menu(self, event):  # type: ignore[override]
         try:
@@ -127,8 +121,15 @@ class ChatLog(ttk.Frame):
         finally:
             self._menu.grab_release()
 
-    def _paste_blocked(self, event=None):  # type: ignore[override]
-        return "break"
+    # ---------- menu commands ----------
+    def _copy_menu(self) -> None:
+        self.text.event_generate("<<Copy>>")
 
-    def _cut_blocked(self, event=None):  # type: ignore[override]
-        return "break"
+    def _select_all_menu(self) -> None:
+        self.text.tag_add("sel", "1.0", "end-1c")
+        self.text.mark_set("insert", "end-1c")
+        self.text.see("insert")
+
+    def _blocked_menu(self) -> None:
+        # Intentionally do nothing (read-only transcript)
+        return

@@ -15,3 +15,8 @@ Thumbs.db
 sentinel/memory/symbolic_store.json
 F:\\Sandbox/
 
+
+# local env + logs
+.venv*/
+logs/
+
