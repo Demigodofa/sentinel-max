@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
+from sentinel.tools.registry import ToolRegistry
 
 logger = get_logger(__name__)
 
@@ -104,12 +105,27 @@ class MemoryFilter:
 class MemoryContextBuilder:
     """Construct curated memory context windows for planning and reflection."""
 
-    def __init__(self, memory: MemoryManager, ranker: Optional[MemoryRanker] = None, mem_filter: Optional[MemoryFilter] = None) -> None:
+    def __init__(
+        self,
+        memory: MemoryManager,
+        ranker: Optional[MemoryRanker] = None,
+        mem_filter: Optional[MemoryFilter] = None,
+        tool_registry: Optional[ToolRegistry] = None,
+    ) -> None:
         self.memory = memory
         self.ranker = ranker or MemoryRanker(memory)
         self.filter = mem_filter or MemoryFilter()
+        self.tool_registry = tool_registry
 
-    def build_context(self, goal: str, goal_type: str, limit: int = 5) -> Tuple[List[Dict[str, Any]], str]:
+    def build_context(
+        self,
+        goal: str,
+        goal_type: str,
+        limit: int = 5,
+        *,
+        include_tool_summary: bool = False,
+        tool_registry: Optional[ToolRegistry] = None,
+    ) -> Tuple[List[Dict[str, Any]], str]:
         ranked = self.ranker.rank(goal, goal_type, limit=limit)
         curated = self.filter.filter(ranked)
         context_strings: List[str] = []
@@ -117,6 +133,12 @@ class MemoryContextBuilder:
             metadata = item.record.get("metadata", {})
             text = item.record.get("text") or item.record.get("value", {}).get("text") or str(item.record.get("value", ""))
             context_strings.append(f"[{metadata.get('namespace', metadata.get('category', ''))}] {text}")
+        summary_block = ""
+        registry = tool_registry or self.tool_registry
+        if include_tool_summary and registry:
+            summary_block = self._tool_summary_block(registry)
+            if summary_block:
+                context_strings.append(f"[tools]\n{summary_block}")
         context_block = "\n".join(context_strings)
         if context_block:
             try:
@@ -127,4 +149,21 @@ class MemoryContextBuilder:
                 )
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning("Failed to store memory context: %s", exc)
-        return [item.record for item in curated], context_block
+        return [item.record for item in curated], context_block or summary_block
+
+    def _tool_summary_block(self, registry: ToolRegistry) -> str:
+        summary = registry.prompt_safe_summary()
+        if not summary:
+            return ""
+        lines: List[str] = ["Available tools (deterministic unless noted):"]
+        for name, meta in sorted(summary.items()):
+            deterministic = "deterministic" if meta.get("deterministic", True) else "nondeterministic"
+            lines.append(f"- {name}: {meta.get('description', '')} [{deterministic}]")
+            inputs = meta.get("inputs") or {}
+            if inputs:
+                arg_summaries = []
+                for field, details in inputs.items():
+                    required = "!" if details.get("required") else ""
+                    arg_summaries.append(f"{field}{required}:{details.get('type', 'any')}")
+                lines.append(f"  inputs: {', '.join(arg_summaries)}")
+        return "\n".join(lines)
