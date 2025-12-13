@@ -96,5 +96,6 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - Direct `/tool` invocations now execute through the sandbox (or registry fallback) so filesystem/web/sandbox tools run for real, enabling GUI and CLI parity.
 - Task graphs are mirrored into `plans` with simplified steps so the GUI plan panel renders current work instead of “No plan available.”
 - Structured pipeline logs now carry correlation IDs across ingest → plan → policy → execute → reflect; view them via `/state` in the CLI or the GUI pipeline state panel (fed by `plans`, `execution*`, `reflection.*`, `policy_events`, and `pipeline_events`).
+- GUI layout uses a grid to keep the chat input pinned to the bottom during window resize.
 
 
