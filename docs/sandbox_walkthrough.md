@@ -28,6 +28,7 @@ This guide walks from zero-to-hero in a local sandbox so you can exercise the Se
 - Exercise planning without execution:
   - Enter a goal like "draft a plan to summarize project risks" and confirm the returned plan (execution will be held until approved).
   - Use `/run` to execute a pending plan once you are comfortable with the steps and policy metadata.
+
 - Conversational coverage: issue commands as natural chat instead of slash-prefixed to ensure the ConversationController routes them (e.g., "turn on autonomy for two loops" or "list the registered tools" should mirror `/auto 2` and `/tools`).
 
 ## 3) Autonomy and policy checks
@@ -41,6 +42,7 @@ This guide walks from zero-to-hero in a local sandbox so you can exercise the Se
 ## 4) Memory + reflection validation
 - Submit a few related goals (e.g., "research GUI gap", then "list open GUI tasks") and ensure responses mention prior context, showing the vector/symbolic recall path.
 - Check that reflection summaries propose plan adjustments and tool-gap suggestions after autonomous runs.
+
 - Confirm memory persistence by restarting the CLI and asking for prior goals (e.g., "what was I researching?" should retrieve `goals` and related contexts from disk-backed memory).
 
 ## 5) Tooling breadth
@@ -51,8 +53,10 @@ This guide walks from zero-to-hero in a local sandbox so you can exercise the Se
   - Provide a minimal spec ("build a FastAPI hello-world") and ensure the builder runs inside the sandbox; verify artifacts are written under `artifacts/` without escaping the sandbox root.
 - Browser agent:
   - Trigger the `browser_agent` tool to validate registration and sandboxed execution; ensure it respects policy limits and does not execute arbitrary system commands.
+
 - Conversation routing:
   - Try `/tool` commands with and without JSON payloads, plus natural language variants ("open the browser agent"), to detect any dead command paths.
+
 
 ## 6) GUI/server sanity check
 - Run GUI mode and confirm it routes through the full pipeline:
@@ -72,6 +76,8 @@ This guide walks from zero-to-hero in a local sandbox so you can exercise the Se
 - **Artifacts/logs**: `execution/`, `policy_events/`, `memory_contexts/`, and `planning_traces/` should populate after runs. Empty directories after successful runs flag telemetry outages.
 
 ## 8) What to change / add next
+=======
+## 7) What to change / add next
 - **Wire the GUI to the real pipeline**: Replace the `_process()` placeholder in `sentinel/gui/app.py` with `ControllerBridge` calls so GUI input flows through the same planner/worker/policy stack as CLI/server.
 - **Defer tool registration side effects**: Move `DEFAULT_TOOL_REGISTRY` population out of import time and behind the controller bootstrap to avoid global state leakage and optional-dependency crashes.
 - **Make web tools optional**: Guard `requests` imports and surface a clearer error or disable web tools when the dependency is missing so CLI/GUI startup does not fail on fresh environments.
