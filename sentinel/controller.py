@@ -60,7 +60,9 @@ class SentinelController:
         self.sandbox = Sandbox()
 
         self.simulation_sandbox = SimulationSandbox(self.tool_registry)
-        self.memory_context_builder = MemoryContextBuilder(self.memory)
+        self.memory_context_builder = MemoryContextBuilder(
+            self.memory, tool_registry=self.tool_registry
+        )
         self.policy_engine = PolicyEngine(self.memory)
 
         self._register_default_tools()

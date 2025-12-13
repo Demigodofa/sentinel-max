@@ -8,7 +8,7 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 - **Long-Horizon Project Engine**: Durable project memory, dependency validation, policy-governed planning, and human-readable reporting.
 - **Policy-First Execution**: Safety, permission, determinism, and autonomy constraints enforced across planning and runtime.
 - **Memory Intelligence**: Symbolic + vector storage with curated contexts for planning, execution, and reflection — all persisted under the sandbox root (`F:\\Sandbox` by default).
-- **Sandboxed Tooling**: Sandbox-backed tool registry plus multi-agent coordination for tool evolution; GUI and CLI both drive the same controller pipeline.
+- **Sandboxed Tooling**: Sandbox-backed tool registry plus multi-agent coordination for tool evolution; GUI and CLI both drive the same controller pipeline. Planner prompts now include prompt-safe, read-only tool summaries each turn so model responses cannot mutate registry metadata.
 
 ## Runtime pipeline
 
@@ -130,6 +130,7 @@ print(engine.dependency_issues(project["project_id"]))
 - **Sandbox execution**: Tools run inside a restricted sandbox via the worker and topological executor.
 - **Autonomy guardrails**: Time, cycle, and refinement limits enforced before each loop iteration. Use `/auto until done` to keep autonomy running without timing out; `/auto on|off` toggles bounded runs.
 - **Reflection**: Structured reflections stored under typed namespaces support replanning and transparency.
+- **Tool gaps**: When planning cannot map a subgoal to a registered tool, a tool-gap request is persisted to `plans` and `policy_events` so follow-up tooling can be generated with sandbox context.
 
 ## Self-augmentation feedback
 

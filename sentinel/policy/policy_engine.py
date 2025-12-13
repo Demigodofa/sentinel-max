@@ -219,6 +219,11 @@ class PolicyEngine:
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Failed to persist policy event: %s", exc)
 
+    def record_event(self, event_type: str, message: str, details: Optional[Dict[str, Any]] = None) -> None:
+        """Public helper to capture policy events from other subsystems."""
+
+        self._record_event(event_type, message, details)
+
     # ------------------------------------------------------------------
     # Long-horizon project governance
     # ------------------------------------------------------------------
