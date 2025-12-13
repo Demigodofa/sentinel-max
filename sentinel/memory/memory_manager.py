@@ -101,7 +101,9 @@ class MemoryManager:
             for ns in self.symbolic.list_namespaces():
                 all_records.extend(self.symbolic.read(ns))
             return sorted(all_records, key=lambda r: r.get("updated_at", ""))
-        return self.symbolic.read(namespace, key)
+
+        records = self.symbolic.read(namespace, key)
+        return sorted(records, key=lambda r: r.get("updated_at", ""), reverse=True)
 
     def recall_recent(self, limit: int = 5, namespace: Optional[str] = None) -> List[Dict[str, Any]]:
         """Return most recent symbolic entries, optionally filtered by namespace."""

@@ -116,6 +116,17 @@ class TestExecutionController(unittest.TestCase):
         self.assertEqual(trace.results[-1].node.id, "a")
         self.assertEqual(len(trace.results), 1)
 
+    def test_policy_block_reasons_are_recorded(self):
+        self.approval.approve()
+        self.policy.real_tool_allowlist = {"other"}
+        graph = self._graph_two_steps()
+        trace = self.controller.execute_until_complete(graph)
+        self.assertTrue(trace.results)
+        first_result = trace.results[0]
+        self.assertFalse(first_result.success)
+        self.assertIsNotNone(first_result.policy)
+        self.assertIn("not allowed", " ".join(first_result.policy.reasons))
+
     def test_for_cycles_limits_executions(self):
         self.approval.approve()
         graph = self._graph_two_steps()
@@ -158,7 +169,7 @@ class TestExecutionController(unittest.TestCase):
         graph = self._graph_two_steps()
         trace = controller.execute_until_complete(graph)
         self.assertFalse(trace.results[0].success)
-        self.assertIn("not permitted", trace.results[0].error)
+        self.assertIn("not allowed", trace.results[0].error)
 
     def test_worker_stores_real_execution_metadata(self):
         self.approval.approve()

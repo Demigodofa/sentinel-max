@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Dict, Optional, TYPE_CHECKING, Iterable, Tuple
+from typing import Dict, Optional, TYPE_CHECKING, Iterable, Tuple, List
 
 if TYPE_CHECKING:
     from sentinel.agent_core.autonomy import AutonomyLoop
@@ -17,6 +17,7 @@ from sentinel.world.model import WorldModel
 from sentinel.conversation.dialog_manager import DialogManager
 from sentinel.conversation.intent import Intent, classify_intent
 from sentinel.conversation.intent_engine import IntentEngine, NormalizedGoal
+from sentinel.conversation.message_dto import MessageDTO
 from sentinel.conversation.nl_to_taskgraph import NLToTaskGraph
 from sentinel.agents.multi_agent_engine import MultiAgentEngine
 
@@ -63,9 +64,24 @@ class ConversationController:
         self.auto_budget_turns: Optional[int] = 0
         self.auto_deadline_epoch: float = 0.0
 
-    def handle_input(self, text: str) -> Dict[str, object]:
-        logger.info("Conversation pipeline received: %s", text)
+    def handle_input(self, message: MessageDTO | str) -> Dict[str, object]:
+        dto = MessageDTO.coerce(message)
+        payload = dto.to_payload()
+        logger.info("Conversation pipeline received envelope: %s", payload)
         session_context = self.dialog_manager.get_session_context()
+        self.memory.store_fact(
+            "goals",
+            key=None,
+            value=payload,
+            metadata={
+                "mode": dto.mode,
+                "autonomy": dto.autonomy,
+                "tool_call": bool(dto.tool_call),
+                "context_refs": list(dto.context_refs),
+            },
+        )
+
+        text = dto.text
         raw = text.strip()
         normalized_text = raw.lower()
 
@@ -684,16 +700,10 @@ class ConversationController:
                     "title": getattr(node, "title", "")
                     or getattr(node, "action", "")
                     or getattr(node, "tool", ""),
-                    "depends_on": getattr(node, "depends_on", []) or [],
+                    "depends_on": getattr(node, "depends_on", []) or getattr(node, "requires", []) or [],
                 }
             )
-
-        self.memory.store_fact(
-            "plans",
-            key=None,
-            value={"goal": goal_text, "steps": steps},
-            metadata={"domain": normalized_goal.domain},
-        )
+        self.planner.record_plan_snapshot(goal_text, steps, metadata={"domain": normalized_goal.domain})
         trace = self.autonomy.run_graph(task_graph, goal_text)
         return trace
 
@@ -707,6 +717,15 @@ class ConversationController:
             base = "Tasks executed successfully with constraints validated."
 
         suggestions: list[str] = []
+        policy_blocks, policy_rewrites, policy_suggestions = self._policy_summary(trace)
+        if policy_blocks or policy_rewrites:
+            policy_bits: list[str] = []
+            if policy_blocks:
+                policy_bits.append(f"Policy blocks: {'; '.join(policy_blocks)}")
+            if policy_rewrites:
+                policy_bits.append(f"Policy rewrites: {'; '.join(policy_rewrites)}")
+            base = f"{base} {' '.join(policy_bits)}"
+        suggestions.extend(policy_suggestions)
         metadata = getattr(task_graph, "metadata", {}) if task_graph else {}
         if isinstance(metadata, dict):
             critic = metadata.get("critic_suggestions") or []
@@ -734,3 +753,20 @@ class ConversationController:
         if normalized_goal.preferences:
             base = f"{base} Persona: {', '.join(normalized_goal.preferences)}."
         return self.dialog_manager.format_agent_response(base)
+
+    def _policy_summary(self, trace: ExecutionTrace) -> tuple[list[str], list[str], list[str]]:
+        blocked: list[str] = []
+        rewrites: list[str] = []
+        suggestions: list[str] = []
+        for result in getattr(trace, "results", []) or []:
+            policy = getattr(result, "policy", None)
+            if not policy:
+                continue
+            if policy.rewrites:
+                rewrites.extend(policy.rewrites)
+            if not policy.allowed and policy.reasons:
+                blocked.append(f"{result.node.id}: {', '.join(policy.reasons)}")
+                suggestions.append(
+                    f"Replan around {result.node.id}: {', '.join(policy.reasons)}"
+                )
+        return blocked, rewrites, suggestions

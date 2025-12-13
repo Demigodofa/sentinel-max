@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
+from sentinel.config.sandbox_config import get_sandbox_root
 from sentinel.logging.logger import get_logger
 from sentinel.memory.intelligence import MemoryContextBuilder
 from sentinel.memory.memory_manager import MemoryManager
@@ -26,6 +28,7 @@ class PlanContext:
     resources: List[str]
     memories: List[Dict[str, Any]]
     context_block: str
+    tool_gaps: List[Dict[str, Any]]
 
 
 class AdaptivePlanner:
@@ -44,7 +47,9 @@ class AdaptivePlanner:
         self.memory = memory
         self.policy_engine = policy_engine
         self.validator = GraphValidator(tool_registry)
-        self.memory_context_builder = memory_context_builder or MemoryContextBuilder(memory)
+        self.memory_context_builder = memory_context_builder or MemoryContextBuilder(
+            memory, tool_registry=tool_registry
+        )
         self.world_model = world_model
         self.simulation_sandbox = simulation_sandbox
 
@@ -55,19 +60,20 @@ class AdaptivePlanner:
         try:
             plan_context = self._analyze_goal(goal)
             subgoals = self._generate_subgoals(plan_context, reflection)
-            graph = self._build_graph(plan_context, subgoals)
+            graph = self._build_graph(plan_context, subgoals, reflection)
             self._score_with_simulation(graph)
             self.policy_engine.evaluate_plan(graph, self.tool_registry)
             self.validator.validate(graph)
-            self._record_plan(goal, graph, plan_context)
+            self._record_plan(goal, graph, plan_context, reflection)
             return graph
         except Exception as exc:
             logger.warning("Adaptive planning failed, using deterministic fallback: %s", exc)
+            plan_context = self._ensure_context(goal)
             fallback = self._deterministic_plan(goal)
             self._score_with_simulation(fallback)
             self.policy_engine.evaluate_plan(fallback, self.tool_registry)
             self.validator.validate(fallback)
-            self._record_plan(goal, fallback, PlanContext(goal, "fallback", [], ""))
+            self._record_plan(goal, fallback, plan_context)
             return fallback
 
     def replan(self, goal: str, reflection: Dict[str, Any]) -> TaskGraph:
@@ -87,7 +93,13 @@ class AdaptivePlanner:
             domain_capabilities = self.world_model.list_capabilities(domain_profile.name)
             resources = [descriptor.name for descriptor in self.world_model.predict_required_resources(goal)]
         goal_type = self._goal_type_from(domain_name, normalized)
-        memories, context_block = self.memory_context_builder.build_context(goal, goal_type, limit=6)
+        memories, context_block = self.memory_context_builder.build_context(
+            goal,
+            goal_type,
+            limit=6,
+            include_tool_summary=True,
+            tool_registry=self.tool_registry,
+        )
         return PlanContext(
             goal=goal,
             goal_type=goal_type,
@@ -96,6 +108,7 @@ class AdaptivePlanner:
             resources=resources,
             memories=memories,
             context_block=context_block,
+            tool_gaps=[],
         )
 
     def _goal_type_from(self, domain_name: str, normalized_goal: str) -> str:
@@ -119,6 +132,19 @@ class AdaptivePlanner:
             return "file_processing"
         return "info_query"
 
+    def _ensure_context(self, goal: str) -> PlanContext:
+        goal_type = self._goal_type_from("", goal.lower())
+        memories, context_block = self.memory_context_builder.build_context(goal, goal_type, limit=6)
+        return PlanContext(
+            goal=goal,
+            goal_type=goal_type or "fallback",
+            domain=goal_type or "fallback",
+            domain_capabilities=[],
+            resources=[],
+            memories=memories,
+            context_block=context_block,
+        )
+
     def _generate_subgoals(self, plan_context: PlanContext, reflection: Optional[Dict[str, Any]]) -> List[str]:
         subgoals: List[str] = []
         if plan_context.goal_type == "code_generation":
@@ -141,17 +167,33 @@ class AdaptivePlanner:
             subgoals.extend(["map_workflow", "compose_automation", "validate_automation"])
         else:
             subgoals.extend(["collect_information", "synthesize_answer"])
-        if reflection and reflection.get("issues_detected"):
-            subgoals.append("address_reflection_findings")
+        if reflection:
+            issues = reflection.get("issues_detected") or []
+            if issues:
+                subgoals.append("address_reflection_findings")
+                for issue in issues:
+                    subgoals.append(f"resolve_{issue}")
+            plan_adjustment = reflection.get("plan_adjustment") or {}
+            if plan_adjustment.get("action") == "replan":
+                subgoals.append("apply_reflection_replan")
+            for focus in plan_adjustment.get("focus", []):
+                subgoals.append(f"focus_on_{focus}")
         return subgoals
 
-    def _build_graph(self, plan_context: PlanContext, subgoals: List[str]) -> TaskGraph:
+    def _build_graph(
+        self, plan_context: PlanContext, subgoals: List[str], reflection: Optional[Dict[str, Any]] = None
+    ) -> TaskGraph:
         nodes: List[TaskNode] = []
         produces: Dict[str, str] = {}
+        tool_gaps: List[Dict[str, Any]] = []
         for idx, subgoal in enumerate(subgoals, start=1):
             node_id = f"task_{idx}_{subgoal}"
             description = f"{subgoal.replace('_', ' ').title()} for goal"
             tool_name, args, output = self._select_tool(subgoal, plan_context.goal)
+            if tool_name is None:
+                gap_details = self._record_tool_gap(plan_context.goal, subgoal)
+                if gap_details:
+                    tool_gaps.append(gap_details)
             requires = list(produces.keys()) if idx > 1 else []
             produces_key = output or f"artifact_{idx}"
             produces[produces_key] = node_id
@@ -177,6 +219,7 @@ class AdaptivePlanner:
                 parallelizable=False,
             )
         )
+        plan_context.tool_gaps = tool_gaps
         metadata = {
             "origin_goal": plan_context.goal,
             "domain": plan_context.domain,
@@ -186,7 +229,15 @@ class AdaptivePlanner:
             "tool_choices": [node.tool for node in nodes],
             "reasoning_trace": self._reasoning_trace(plan_context, nodes),
             "semantic_tool_profile": self._semantic_profile(),
+            "tool_gaps": tool_gaps,
         }
+        if reflection:
+            metadata.update(
+                {
+                    "reflection_issues": reflection.get("issues_detected", []),
+                    "plan_adjustment": reflection.get("plan_adjustment", {}),
+                }
+            )
         graph = TaskGraph(nodes, metadata=metadata)
         return graph
 
@@ -279,25 +330,74 @@ class AdaptivePlanner:
         successes = sum(1 for result in simulations.values() if result.success)
         return round((successes - 0.5 * warnings) / total, 2)
 
-    def _record_plan(self, goal: str, graph: TaskGraph, context: PlanContext) -> None:
+    def _record_plan(
+        self, goal: str, graph: TaskGraph, context: PlanContext, reflection: Optional[Dict[str, Any]] = None
+    ) -> None:
         try:
-            self.memory.store_fact(
-                "plans",
-                key=None,
-                value={
-                    "goal": goal,
-                    "goal_type": context.goal_type,
-                    "metadata": graph.metadata,
-                    "nodes": [node.__dict__ for node in graph],
-                },
-            )
+            steps = [
+                {
+                    "id": getattr(node, "id", ""),
+                    "title": getattr(node, "title", "")
+                    or getattr(node, "action", "")
+                    or getattr(node, "tool", "")
+                    or node.description,
+                    "depends_on": getattr(node, "depends_on", []) or getattr(node, "requires", []) or [],
+                }
+                for node in graph
+            ]
+            version = self._next_plan_version(goal)
+            graph.add_metadata(plan_version=version)
+            payload = {
+                "goal": goal,
+                "goal_type": context.goal_type,
+                "metadata": graph.metadata,
+                "nodes": [node.__dict__ for node in graph],
+                "steps": steps,
+                "version": version,
+                "reflection": reflection or {},
+            }
+            self._persist_plan(goal, payload, metadata={"goal_type": context.goal_type, "version": version})
             self.memory.store_text(
                 graph.metadata.get("reasoning_trace", ""),
                 namespace="planning_traces",
-                metadata={"goal": goal, "goal_type": context.goal_type},
+                metadata=planning_metadata,
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Failed to record adaptive plan: %s", exc)
+
+    def _persist_plan(self, goal: str, payload: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> None:
+        metadata = metadata or {}
+        base_key = self._goal_key(goal)
+        version = payload.get("version") or metadata.get("version")
+        versioned_key = f"{base_key}.v{version}" if version else None
+        record_metadata = {**metadata, "current": False}
+        if versioned_key:
+            self.memory.store_fact("plans", key=versioned_key, value=payload, metadata=record_metadata)
+        record_metadata["current"] = True
+        self.memory.store_fact("plans", key=base_key, value=payload, metadata=record_metadata)
+
+    def _next_plan_version(self, goal: str) -> int:
+        try:
+            existing = self.memory.query("plans")
+        except Exception:  # pragma: no cover - defensive fallback
+            existing = []
+        versions: List[int] = []
+        for entry in existing:
+            value = entry.get("value", {}) if isinstance(entry, dict) else {}
+            if isinstance(value, dict) and value.get("goal") == goal:
+                version = value.get("version") or entry.get("metadata", {}).get("version")
+                if isinstance(version, int):
+                    versions.append(version)
+        return max(versions) + 1 if versions else 1
+
+    def _goal_key(self, goal: str) -> str:
+        slug = re.sub(r"[^a-zA-Z0-9]+", "_", goal).strip("_").lower()
+        return slug or "plan"
+
+    def record_plan_snapshot(self, goal: str, steps: List[Dict[str, Any]], metadata: Optional[Dict[str, Any]] = None) -> None:
+        version = self._next_plan_version(goal)
+        payload = {"goal": goal, "steps": steps, "metadata": metadata or {}, "version": version}
+        self._persist_plan(goal, payload, metadata={**(metadata or {}), "version": version})
 
     def _deterministic_plan(self, goal: str) -> TaskGraph:
         normalized = goal.strip().lower()

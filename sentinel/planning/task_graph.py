@@ -229,12 +229,18 @@ class TopologicalExecutor:
                         self._record_memory(result)
                     self._update_neighbors(node.id, dependencies, indegree, ready)
                     continue
+                policy_result = None
                 if self.policy_engine:
-                    try:
-                        self.policy_engine.validate_execution(node, self.registry)
-                    except Exception as exc:  # pragma: no cover - defensive safety
+                    policy_result = self.policy_engine.validate_execution(
+                        node, self.registry, enforce=False
+                    )
+                    if not policy_result.allowed:
                         result = ExecutionResult(
-                            node=node, success=False, error=str(exc), simulation=simulation
+                            node=node,
+                            success=False,
+                            error="; ".join(policy_result.reasons) or "Policy blocked",
+                            simulation=simulation,
+                            policy=policy_result,
                         )
                         failed.add(node.id)
                         trace.add(result)
@@ -248,6 +254,8 @@ class TopologicalExecutor:
                     self._store_outputs(node, result.output, artifacts)
                 else:
                     failed.add(node.id)
+                if result.policy is None and policy_result:
+                    result.policy = policy_result
                 trace.add(result)
                 if self.memory:
                     self._record_memory(result)

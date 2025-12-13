@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import math
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
+from sentinel.tools.registry import ToolRegistry
 
 logger = get_logger(__name__)
 
@@ -104,12 +106,27 @@ class MemoryFilter:
 class MemoryContextBuilder:
     """Construct curated memory context windows for planning and reflection."""
 
-    def __init__(self, memory: MemoryManager, ranker: Optional[MemoryRanker] = None, mem_filter: Optional[MemoryFilter] = None) -> None:
+    def __init__(
+        self,
+        memory: MemoryManager,
+        ranker: Optional[MemoryRanker] = None,
+        mem_filter: Optional[MemoryFilter] = None,
+        tool_registry: Optional[ToolRegistry] = None,
+    ) -> None:
         self.memory = memory
         self.ranker = ranker or MemoryRanker(memory)
         self.filter = mem_filter or MemoryFilter()
+        self.tool_registry = tool_registry
 
-    def build_context(self, goal: str, goal_type: str, limit: int = 5) -> Tuple[List[Dict[str, Any]], str]:
+    def build_context(
+        self,
+        goal: str,
+        goal_type: str,
+        limit: int = 5,
+        *,
+        include_tool_summary: bool = False,
+        tool_registry: Optional[ToolRegistry] = None,
+    ) -> Tuple[List[Dict[str, Any]], str]:
         ranked = self.ranker.rank(goal, goal_type, limit=limit)
         curated = self.filter.filter(ranked)
         context_strings: List[str] = []
@@ -117,14 +134,57 @@ class MemoryContextBuilder:
             metadata = item.record.get("metadata", {})
             text = item.record.get("text") or item.record.get("value", {}).get("text") or str(item.record.get("value", ""))
             context_strings.append(f"[{metadata.get('namespace', metadata.get('category', ''))}] {text}")
+        summary_block = ""
+        registry = tool_registry or self.tool_registry
+        if include_tool_summary and registry:
+            summary_block = self._tool_summary_block(registry)
+            if summary_block:
+                context_strings.append(f"[tools]\n{summary_block}")
         context_block = "\n".join(context_strings)
-        if context_block:
-            try:
-                self.memory.store_text(
-                    context_block,
-                    namespace="memory_contexts",
-                    metadata={"goal": goal, "goal_type": goal_type, "count": len(curated)},
-                )
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.warning("Failed to store memory context: %s", exc)
+        ranked_payload = []
+        for item in ranked:
+            metadata = item.record.get("metadata", {})
+            ranked_payload.append(
+                {
+                    "score": item.score,
+                    "namespace": item.record.get("namespace", metadata.get("namespace")),
+                    "metadata": metadata,
+                    "text": item.record.get("text")
+                    or item.record.get("value", {}).get("text")
+                    or str(item.record.get("value", "")),
+                }
+            )
+        payload = {
+            "goal": goal,
+            "goal_type": goal_type,
+            "count": len(curated),
+            "ranked": ranked_payload,
+            "context_block": context_block,
+        }
+        try:
+            self.memory.store_fact(
+                "memory_contexts",
+                key=None,
+                value=payload,
+                metadata={
+                    "goal": goal,
+                    "goal_type": goal_type,
+                    "count": len(curated),
+                    "ranked": len(ranked_payload),
+                    "type": "context_window",
+                },
+            )
+            self.memory.store_text(
+                json.dumps(payload, ensure_ascii=False),
+                namespace="memory_contexts",
+                metadata={
+                    "goal": goal,
+                    "goal_type": goal_type,
+                    "count": len(curated),
+                    "ranked": len(ranked_payload),
+                    "type": "context_window",
+                },
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Failed to store memory context: %s", exc)
         return [item.record for item in curated], context_block
