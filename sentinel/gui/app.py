@@ -70,31 +70,37 @@ class SentinelApp:
 
         container = ttk.Frame(self.root, padding=self.theme["spacing"]["pad_small"])
         container.pack(fill="both", expand=True)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(0, weight=1)
 
         main_area = ttk.Frame(container)
-        main_area.pack(fill="both", expand=True)
+        main_area.grid(row=0, column=0, sticky="nsew")
 
         self.chat = ChatLog(main_area, theme=self.theme)
         self.chat.grid(row=0, column=0, sticky="nsew", padx=(0, self.theme["spacing"]["pad_small"]))
 
         side_panel = ttk.Frame(main_area)
         side_panel.grid(row=0, column=1, sticky="nsew")
+        side_panel.grid_columnconfigure(0, weight=1)
+        side_panel.grid_rowconfigure(0, weight=1)
+        side_panel.grid_rowconfigure(1, weight=1)
+        side_panel.grid_rowconfigure(2, weight=1)
 
         self.plan_panel = PlanPanel(side_panel, theme=self.theme)
-        self.plan_panel.pack(fill="both", expand=True)
+        self.plan_panel.grid(row=0, column=0, sticky="nsew")
 
         self.state_panel = StatePanel(side_panel, theme=self.theme)
-        self.state_panel.pack(fill="both", expand=True, pady=(self.theme["spacing"]["pad_small"], 0))
+        self.state_panel.grid(row=1, column=0, sticky="nsew", pady=(self.theme["spacing"]["pad_small"], 0))
 
         self.log_panel = LogPanel(side_panel, theme=self.theme)
-        self.log_panel.pack(fill="both", expand=True, pady=(self.theme["spacing"]["pad_small"], 0))
+        self.log_panel.grid(row=2, column=0, sticky="nsew", pady=(self.theme["spacing"]["pad_small"], 0))
 
         main_area.columnconfigure(0, weight=2)
         main_area.columnconfigure(1, weight=1)
         main_area.rowconfigure(0, weight=1)
 
         self.input_panel = InputPanel(container, on_send=self._handle_send, theme=self.theme)
-        self.input_panel.pack(fill="x", pady=(self.theme["spacing"]["pad_small"], 0))
+        self.input_panel.grid(row=1, column=0, sticky="ew", pady=(self.theme["spacing"]["pad_small"], 0))
 
         self.chat.append("meta", "Sentinel MAX GUI ready. Type a message below.")
 
