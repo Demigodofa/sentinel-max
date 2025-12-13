@@ -66,6 +66,8 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - Recent recall returns newest records; semantic search ranks by cosine similarity (hash-based fallback when model missing).
 - Execution steps, reflections, policy events, and planning traces automatically recorded.
 - Context/rank reports stored under `memory_contexts`/`memory_rank_reports`.
+- Ranked context payloads are persisted even when filters remove all snippets, and execution/reflection summaries plus artifacts now land in `execution`, `reflection.*`, and `policy_events` namespaces for recall.
+- ExecutionController stores per-node results, execution summaries, and artifacts as structured facts (with mirrored text entries) in the `execution` namespace so downstream components can recall the exact outputs. Planning traces and context windows are also written as structured facts alongside readable text copies for GUI consumers. PolicyEngine now persists allow/block events as structured facts in `policy_events` with mirrored text copies for audits.
 
 ## Safety and Policy Rules
 - Sandbox restricts Python built-ins; PolicyEngine blocks missing tool metadata, disallowed permissions, unsafe arguments, and excessive parallelism.

@@ -1,6 +1,7 @@
 """Reflection engine with multi-dimensional reasoning."""
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional
 
 from sentinel.logging.logger import get_logger
@@ -119,10 +120,13 @@ class ReflectionEngine:
 
     def _persist(self, reflection: Dict[str, Any], reflection_type: str) -> None:
         try:
+            metadata = {"summary": reflection.get("summary", ""), "confidence": reflection.get("confidence"), "type": reflection_type}
+            namespace = f"reflection.{reflection_type}"
+            self.memory.store_fact(namespace, key=None, value=reflection, metadata=metadata)
             self.memory.store_text(
-                str(reflection),
-                namespace=f"reflection.{reflection_type}",
-                metadata={"summary": reflection.get("summary", ""), "confidence": reflection.get("confidence")},
+                json.dumps(reflection, ensure_ascii=False),
+                namespace=namespace,
+                metadata=metadata,
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Failed to persist reflection: %s", exc)

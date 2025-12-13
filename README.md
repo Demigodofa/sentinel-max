@@ -7,8 +7,8 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 
 - **Long-Horizon Project Engine**: Durable project memory, dependency validation, policy-governed planning, and human-readable reporting.
 - **Policy-First Execution**: Safety, permission, determinism, and autonomy constraints enforced across planning and runtime.
-- **Memory Intelligence**: Symbolic + vector storage with curated contexts for planning, execution, and reflection — all persisted under the sandbox root (`F:\\Sandbox` by default).
-- **Sandboxed Tooling**: Sandbox-backed tool registry plus multi-agent coordination for tool evolution; GUI and CLI both drive the same controller pipeline. Planner prompts now include prompt-safe, read-only tool summaries each turn so model responses cannot mutate registry metadata.
+- **Memory Intelligence**: Symbolic + vector storage with curated contexts for planning, execution, and reflection — all persisted under the sandbox root (`F:\\Sandbox` by default). Ranked context windows, planning traces, execution summaries, reflections, policy events, and per-node execution facts (including artifacts) are written to dedicated namespaces (`memory_contexts`, `planning_traces`, `execution`, `reflection.*`, `policy_events`) as both structured facts and readable text entries.
+- **Sandboxed Tooling**: Sandbox-backed tool registry plus multi-agent coordination for tool evolution; GUI and CLI both drive the same controller pipeline.
 
 ## Runtime pipeline
 
@@ -126,7 +126,7 @@ print(engine.dependency_issues(project["project_id"]))
 
 ## Operations
 
-- **Policy visibility**: Policy events are persisted to memory (when configured) for auditability.
+- **Policy visibility**: Policy events are persisted as structured facts with mirrored text entries in `policy_events` (when configured) for auditability.
 - **Sandbox execution**: Tools run inside a restricted sandbox via the worker and topological executor.
 - **Autonomy guardrails**: Time, cycle, and refinement limits enforced before each loop iteration. Use `/auto until done` to keep autonomy running without timing out; `/auto on|off` toggles bounded runs.
 - **Reflection**: Structured reflections stored under typed namespaces support replanning and transparency.
