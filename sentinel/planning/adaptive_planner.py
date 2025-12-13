@@ -63,11 +63,12 @@ class AdaptivePlanner:
             return graph
         except Exception as exc:
             logger.warning("Adaptive planning failed, using deterministic fallback: %s", exc)
+            plan_context = self._ensure_context(goal)
             fallback = self._deterministic_plan(goal)
             self._score_with_simulation(fallback)
             self.policy_engine.evaluate_plan(fallback, self.tool_registry)
             self.validator.validate(fallback)
-            self._record_plan(goal, fallback, PlanContext(goal, "fallback", [], ""))
+            self._record_plan(goal, fallback, plan_context)
             return fallback
 
     def replan(self, goal: str, reflection: Dict[str, Any]) -> TaskGraph:
@@ -118,6 +119,19 @@ class AdaptivePlanner:
         if any(keyword in normalized_goal for keyword in ["file", "process", "csv", "json"]):
             return "file_processing"
         return "info_query"
+
+    def _ensure_context(self, goal: str) -> PlanContext:
+        goal_type = self._goal_type_from("", goal.lower())
+        memories, context_block = self.memory_context_builder.build_context(goal, goal_type, limit=6)
+        return PlanContext(
+            goal=goal,
+            goal_type=goal_type or "fallback",
+            domain=goal_type or "fallback",
+            domain_capabilities=[],
+            resources=[],
+            memories=memories,
+            context_block=context_block,
+        )
 
     def _generate_subgoals(self, plan_context: PlanContext, reflection: Optional[Dict[str, Any]]) -> List[str]:
         subgoals: List[str] = []
@@ -291,10 +305,30 @@ class AdaptivePlanner:
                     "nodes": [node.__dict__ for node in graph],
                 },
             )
+            planning_trace = {
+                "goal": goal,
+                "goal_type": context.goal_type,
+                "context_block": context.context_block,
+                "reasoning_trace": graph.metadata.get("reasoning_trace", ""),
+                "knowledge_sources": graph.metadata.get("knowledge_sources", []),
+                "tool_choices": graph.metadata.get("tool_choices", []),
+            }
+            planning_metadata = {
+                "goal": goal,
+                "goal_type": context.goal_type,
+                "type": "planning_trace",
+                "knowledge_sources": len(graph.metadata.get("knowledge_sources", [])),
+            }
+            self.memory.store_fact(
+                "planning_traces",
+                key=None,
+                value=planning_trace,
+                metadata=planning_metadata,
+            )
             self.memory.store_text(
                 graph.metadata.get("reasoning_trace", ""),
                 namespace="planning_traces",
-                metadata={"goal": goal, "goal_type": context.goal_type},
+                metadata=planning_metadata,
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Failed to record adaptive plan: %s", exc)

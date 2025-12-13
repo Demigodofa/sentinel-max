@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -118,13 +119,50 @@ class MemoryContextBuilder:
             text = item.record.get("text") or item.record.get("value", {}).get("text") or str(item.record.get("value", ""))
             context_strings.append(f"[{metadata.get('namespace', metadata.get('category', ''))}] {text}")
         context_block = "\n".join(context_strings)
-        if context_block:
-            try:
-                self.memory.store_text(
-                    context_block,
-                    namespace="memory_contexts",
-                    metadata={"goal": goal, "goal_type": goal_type, "count": len(curated)},
-                )
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.warning("Failed to store memory context: %s", exc)
+        ranked_payload = []
+        for item in ranked:
+            metadata = item.record.get("metadata", {})
+            ranked_payload.append(
+                {
+                    "score": item.score,
+                    "namespace": item.record.get("namespace", metadata.get("namespace")),
+                    "metadata": metadata,
+                    "text": item.record.get("text")
+                    or item.record.get("value", {}).get("text")
+                    or str(item.record.get("value", "")),
+                }
+            )
+        payload = {
+            "goal": goal,
+            "goal_type": goal_type,
+            "count": len(curated),
+            "ranked": ranked_payload,
+            "context_block": context_block,
+        }
+        try:
+            self.memory.store_fact(
+                "memory_contexts",
+                key=None,
+                value=payload,
+                metadata={
+                    "goal": goal,
+                    "goal_type": goal_type,
+                    "count": len(curated),
+                    "ranked": len(ranked_payload),
+                    "type": "context_window",
+                },
+            )
+            self.memory.store_text(
+                json.dumps(payload, ensure_ascii=False),
+                namespace="memory_contexts",
+                metadata={
+                    "goal": goal,
+                    "goal_type": goal_type,
+                    "count": len(curated),
+                    "ranked": len(ranked_payload),
+                    "type": "context_window",
+                },
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Failed to store memory context: %s", exc)
         return [item.record for item in curated], context_block
