@@ -15,6 +15,7 @@ from sentinel.conversation import (
     ConversationController,
     DialogManager,
     IntentEngine,
+    MessageDTO,
     NLToTaskGraph,
 )
 from sentinel.config.sandbox_config import ensure_sandbox_root_exists
@@ -59,7 +60,9 @@ class SentinelController:
         self.sandbox = Sandbox()
 
         self.simulation_sandbox = SimulationSandbox(self.tool_registry)
-        self.memory_context_builder = MemoryContextBuilder(self.memory)
+        self.memory_context_builder = MemoryContextBuilder(
+            self.memory, tool_registry=self.tool_registry
+        )
         self.policy_engine = PolicyEngine(self.memory)
 
         self._register_default_tools()
@@ -170,17 +173,19 @@ class SentinelController:
         except ValueError:
             pass
 
-    def process_input(self, message: str) -> str:
-        command_response = self._handle_cli_command(message)
+    def process_input(self, message: MessageDTO | str) -> str:
+        dto = MessageDTO.coerce(message)
+        command_response = self._handle_cli_command(dto.text)
         if command_response is not None:
             return command_response
 
-        result = self.process_conversation(message)
+        result = self.process_conversation(dto)
         return str(result.get("response", ""))
 
-    def process_conversation(self, message: str) -> dict[str, Any]:
-        logger.info("Processing user input: %s", message)
-        return self.conversation_controller.handle_input(message)
+    def process_conversation(self, message: MessageDTO | str) -> dict[str, Any]:
+        dto = MessageDTO.coerce(message)
+        logger.info("Processing user input: %s", dto.text)
+        return self.conversation_controller.handle_input(dto)
 
     def export_state(self) -> dict[str, Any]:
         tools = {

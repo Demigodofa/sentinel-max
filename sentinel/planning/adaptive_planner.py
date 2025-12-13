@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
+from sentinel.config.sandbox_config import get_sandbox_root
 from sentinel.logging.logger import get_logger
 from sentinel.memory.intelligence import MemoryContextBuilder
 from sentinel.memory.memory_manager import MemoryManager
@@ -26,6 +27,7 @@ class PlanContext:
     resources: List[str]
     memories: List[Dict[str, Any]]
     context_block: str
+    tool_gaps: List[Dict[str, Any]]
 
 
 class AdaptivePlanner:
@@ -44,7 +46,9 @@ class AdaptivePlanner:
         self.memory = memory
         self.policy_engine = policy_engine
         self.validator = GraphValidator(tool_registry)
-        self.memory_context_builder = memory_context_builder or MemoryContextBuilder(memory)
+        self.memory_context_builder = memory_context_builder or MemoryContextBuilder(
+            memory, tool_registry=tool_registry
+        )
         self.world_model = world_model
         self.simulation_sandbox = simulation_sandbox
 
@@ -88,7 +92,13 @@ class AdaptivePlanner:
             domain_capabilities = self.world_model.list_capabilities(domain_profile.name)
             resources = [descriptor.name for descriptor in self.world_model.predict_required_resources(goal)]
         goal_type = self._goal_type_from(domain_name, normalized)
-        memories, context_block = self.memory_context_builder.build_context(goal, goal_type, limit=6)
+        memories, context_block = self.memory_context_builder.build_context(
+            goal,
+            goal_type,
+            limit=6,
+            include_tool_summary=True,
+            tool_registry=self.tool_registry,
+        )
         return PlanContext(
             goal=goal,
             goal_type=goal_type,
@@ -97,6 +107,7 @@ class AdaptivePlanner:
             resources=resources,
             memories=memories,
             context_block=context_block,
+            tool_gaps=[],
         )
 
     def _goal_type_from(self, domain_name: str, normalized_goal: str) -> str:
@@ -162,10 +173,15 @@ class AdaptivePlanner:
     def _build_graph(self, plan_context: PlanContext, subgoals: List[str]) -> TaskGraph:
         nodes: List[TaskNode] = []
         produces: Dict[str, str] = {}
+        tool_gaps: List[Dict[str, Any]] = []
         for idx, subgoal in enumerate(subgoals, start=1):
             node_id = f"task_{idx}_{subgoal}"
             description = f"{subgoal.replace('_', ' ').title()} for goal"
             tool_name, args, output = self._select_tool(subgoal, plan_context.goal)
+            if tool_name is None:
+                gap_details = self._record_tool_gap(plan_context.goal, subgoal)
+                if gap_details:
+                    tool_gaps.append(gap_details)
             requires = list(produces.keys()) if idx > 1 else []
             produces_key = output or f"artifact_{idx}"
             produces[produces_key] = node_id
@@ -191,6 +207,7 @@ class AdaptivePlanner:
                 parallelizable=False,
             )
         )
+        plan_context.tool_gaps = tool_gaps
         metadata = {
             "origin_goal": plan_context.goal,
             "domain": plan_context.domain,
@@ -200,6 +217,7 @@ class AdaptivePlanner:
             "tool_choices": [node.tool for node in nodes],
             "reasoning_trace": self._reasoning_trace(plan_context, nodes),
             "semantic_tool_profile": self._semantic_profile(),
+            "tool_gaps": tool_gaps,
         }
         graph = TaskGraph(nodes, metadata=metadata)
         return graph
@@ -332,6 +350,28 @@ class AdaptivePlanner:
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("Failed to record adaptive plan: %s", exc)
+
+    def _record_tool_gap(self, goal: str, subgoal: str) -> Dict[str, Any]:
+        details = {
+            "goal": goal,
+            "subgoal": subgoal,
+            "requested_tool": {
+                "module_path": f"sentinel.tools.{subgoal}",
+                "capabilities": [subgoal.replace("_", " ")],
+                "sandbox_location": str(get_sandbox_root()),
+            },
+        }
+        message = f"No tool matched subgoal '{subgoal}'"
+        try:
+            self.memory.store_fact("plans", key=None, value={"goal": goal, "tool_gap": details})
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("Failed to persist tool gap request: %s", exc)
+        try:
+            if hasattr(self.policy_engine, "record_event"):
+                self.policy_engine.record_event("tool_gap", message, details)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("Failed to record tool gap policy event: %s", exc)
+        return details
 
     def _deterministic_plan(self, goal: str) -> TaskGraph:
         normalized = goal.strip().lower()

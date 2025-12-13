@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sentinel.logging.logger import get_logger
 from sentinel.memory.memory_manager import MemoryManager
+from sentinel.tools.registry import ToolRegistry
 
 logger = get_logger(__name__)
 
@@ -105,12 +106,27 @@ class MemoryFilter:
 class MemoryContextBuilder:
     """Construct curated memory context windows for planning and reflection."""
 
-    def __init__(self, memory: MemoryManager, ranker: Optional[MemoryRanker] = None, mem_filter: Optional[MemoryFilter] = None) -> None:
+    def __init__(
+        self,
+        memory: MemoryManager,
+        ranker: Optional[MemoryRanker] = None,
+        mem_filter: Optional[MemoryFilter] = None,
+        tool_registry: Optional[ToolRegistry] = None,
+    ) -> None:
         self.memory = memory
         self.ranker = ranker or MemoryRanker(memory)
         self.filter = mem_filter or MemoryFilter()
+        self.tool_registry = tool_registry
 
-    def build_context(self, goal: str, goal_type: str, limit: int = 5) -> Tuple[List[Dict[str, Any]], str]:
+    def build_context(
+        self,
+        goal: str,
+        goal_type: str,
+        limit: int = 5,
+        *,
+        include_tool_summary: bool = False,
+        tool_registry: Optional[ToolRegistry] = None,
+    ) -> Tuple[List[Dict[str, Any]], str]:
         ranked = self.ranker.rank(goal, goal_type, limit=limit)
         curated = self.filter.filter(ranked)
         context_strings: List[str] = []
@@ -118,6 +134,12 @@ class MemoryContextBuilder:
             metadata = item.record.get("metadata", {})
             text = item.record.get("text") or item.record.get("value", {}).get("text") or str(item.record.get("value", ""))
             context_strings.append(f"[{metadata.get('namespace', metadata.get('category', ''))}] {text}")
+        summary_block = ""
+        registry = tool_registry or self.tool_registry
+        if include_tool_summary and registry:
+            summary_block = self._tool_summary_block(registry)
+            if summary_block:
+                context_strings.append(f"[tools]\n{summary_block}")
         context_block = "\n".join(context_strings)
         ranked_payload = []
         for item in ranked:

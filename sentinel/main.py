@@ -15,6 +15,7 @@ All core functionality is delegated to:
 import argparse
 import sys
 
+from sentinel.conversation import MessageDTO
 from sentinel.controller import SentinelController
 from sentinel.gui.app import run_gui_app
 from sentinel.server.main import app as fastapi_app
@@ -36,7 +37,7 @@ def run_cli() -> int:
             print("Goodbye.")
             return 0
 
-        response = controller.process_input(user_input)
+        response = controller.process_input(MessageDTO(text=user_input, mode="cli"))
         print("Agent:", response)
 
     return 0
