@@ -214,7 +214,7 @@ class ConversationController:
             response = self.dialog_manager.propose_plan(self.pending_goal_text)
             response = (
                 f"{response}\n\n"
-                "Reply **y** (or /run) to run, **n** to revise, or use **/auto** to run immediately."
+                "Execute? (y/n)\nReply **y** (or /run) to run, **n** to revise, or use **/auto** to run immediately."
             )
             self.dialog_manager.record_turn(
                 text,
@@ -252,7 +252,7 @@ class ConversationController:
                 response = self.dialog_manager.propose_plan(tentative_goal.as_goal_statement())
                 response = (
                     f"{response}\n\n"
-                    "Reply **y** (or /run) to run, **n** to revise, or use **/auto** to run immediately."
+                    "Execute? (y/n)\nReply **y** (or /run) to run, **n** to revise, or use **/auto** to run immediately."
                 )
                 self.dialog_manager.record_turn(
                     text,
@@ -276,7 +276,7 @@ class ConversationController:
             response = self.dialog_manager.propose_plan(tentative_goal.as_goal_statement())
             response = (
                 f"{response}\n\n"
-                "Reply **y** (or /run) to run, **n** to revise, or use **/auto** to run immediately."
+                "Execute? (y/n)\nReply **y** (or /run) to run, **n** to revise, or use **/auto** to run immediately."
             )
             self.dialog_manager.record_turn(
                 text,
