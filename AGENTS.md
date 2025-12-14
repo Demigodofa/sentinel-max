@@ -104,5 +104,6 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - Introduced `/mechanic` diagnostics to verify tool registry health, sandbox access, LLM connectivity, memory read/write, and report unused tools.
 - Documented that the sandbox default spans the full `F:\` drive, while still refusing paths outside `SENTINEL_SANDBOX_ROOT`.
 - PolicyEngine plan validation now returns a structured result and raises on violations unless callers pass `enforce=False` for advisory-only checks.
+- Web search now tries multiple DuckDuckGo endpoints with explicit block detection instead of returning empty successes, `/mechanic` reports tools unused in the recent lookback window, and the echo helper accepts either `text` or `message` inputs.
 
 

@@ -752,13 +752,13 @@ class ConversationController:
         except Exception as exc:  # pragma: no cover - defensive
             memory_message = f"memory check failed: {exc}"
 
-        unused_tools, usage = self._dead_wood_report()
+        unused_tools, usage, lookback = self._dead_wood_report()
         lines = [
             f"Sandbox root: {sandbox_root}",
             f"Tools registered ({len(tools)}): {', '.join(tools) if tools else 'none'}",
             f"LLM connectivity: {'ok' if llm_ok else 'error'} — {llm_message}",
             f"Memory check: {'ok' if memory_ok else 'error'} — {memory_message}",
-            f"Dead wood: {', '.join(unused_tools) if unused_tools else 'all tools recently used'}",
+            f"Dead wood (last {lookback}): {', '.join(unused_tools) if unused_tools else 'all tools recently used'}",
         ]
         response = self.dialog_manager.format_agent_response("\n".join(lines))
         self.dialog_manager.record_turn(
@@ -772,11 +772,11 @@ class ConversationController:
             "dialog_context": session_context,
         }
 
-    def _dead_wood_report(self) -> Tuple[list[str], dict[str, int]]:
+    def _dead_wood_report(self, lookback: int = 25) -> Tuple[list[str], dict[str, int], int]:
         usage: dict[str, int] = {name: 0 for name in self.planner.tool_registry.list_tools().keys()}
         namespaces = ("execution_real", "execution")
         for namespace in namespaces:
-            for record in self.memory.recall_recent(namespace=namespace, limit=200):
+            for record in self.memory.recall_recent(namespace=namespace, limit=lookback):
                 value = record.get("value") if isinstance(record, dict) else None
                 if not isinstance(value, dict):
                     continue
@@ -786,7 +786,7 @@ class ConversationController:
                 if tool_name and tool_name in usage:
                     usage[tool_name] += 1
         unused = [name for name, count in usage.items() if count == 0]
-        return unused, usage
+        return unused, usage, lookback
 
     def _looks_like_task(self, normalized_text: str) -> bool:
         task_verbs = ("search", "browse", "create", "build", "write", "fix", "debug", "run")
