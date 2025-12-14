@@ -1,10 +1,14 @@
-"""Generate small FastAPI microservices safely."""
+"""Generate and manage small FastAPI microservices safely."""
 from __future__ import annotations
 
+import os
 import threading
 import sys
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
 from types import MappingProxyType, ModuleType
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 try:  # Optional dependency
     import uvicorn  # type: ignore
@@ -68,15 +72,35 @@ class MicroserviceBuilder(Tool):
             deterministic=False,
         )
         self.auditor = auditor or PatchAuditor()
-        self._app = None
-        self._server_thread: threading.Thread | None = None
-        self._uvicorn_server = None
+        self._services: Dict[str, "_ServiceProcess"] = {}
+        self._last_service: str | None = None
         self.schema = ToolSchema(
             name="microservice_builder",
             version="1.0.0",
             description="Generate sandboxed FastAPI microservices",
-            input_schema={"description": {"type": "string", "required": True}, "port": {"type": "number", "required": False}, "auto_start": {"type": "boolean", "required": False}},
-            output_schema={"type": "object", "properties": {"code": "string", "endpoints": "array", "status": "string"}},
+            input_schema={
+                "description": {"type": "string", "required": False},
+                "service_name": {"type": "string", "required": False},
+                "port": {"type": "number", "required": False},
+                "auto_start": {"type": "boolean", "required": False},
+                "action": {"type": "string", "required": False},
+                "limit": {"type": "number", "required": False},
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "code": "string",
+                    "endpoints": "array",
+                    "status": "string",
+                    "service_name": "string",
+                    "code_path": "string",
+                    "requirements_path": "string",
+                    "run_command": "string",
+                    "port": "number",
+                    "services": "array",
+                    "logs": "array",
+                },
+            },
             permissions=["fs:read-limited", "net:listen"],
             deterministic=False,
         )
@@ -140,48 +164,189 @@ class MicroserviceBuilder(Tool):
             endpoints.append({"path": "/ping", "method": "get", "response": {"message": "pong"}})
         return endpoints
 
-    def execute(self, description: str | List[Dict[str, Any]], port: int = 8000, auto_start: bool = False) -> Dict[str, Any]:
-        endpoints = self._parse_description(description)
-        code = self._render_code(endpoints)
-        self._audit(code)
-        app = self._sandbox_execute(code)
-        self._app = app
-        result: Dict[str, Any] = {"code": code, "endpoints": endpoints, "status": "ready"}
-        if auto_start:
-            try:
-                self.start(port=port)
-                result["status"] = "running"
-                result["port"] = port
-            except Exception as exc:
-                result["status"] = f"error: {exc}"  # pragma: no cover - runtime guard
-        return result
+    def _service_dir(self, service_name: str) -> Path:
+        storage_root = os.environ.get("SENTINEL_PROJECT_STORAGE") or "projects"
+        path = Path(storage_root).expanduser().resolve() / service_name
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
-    def start(self, port: int = 8000) -> None:
-        if self._app is None:
-            raise RuntimeError("No microservice has been generated yet")
+    def _write_files(self, service_name: str, code: str) -> tuple[Path, Path]:
+        service_dir = self._service_dir(service_name)
+        code_path = service_dir / "app.py"
+        requirements_path = service_dir / "requirements.txt"
+        code_path.write_text(code, encoding="utf-8")
+        requirements = ["fastapi>=0.100.0", "uvicorn>=0.22.0"]
+        requirements_path.write_text("\n".join(requirements) + "\n", encoding="utf-8")
+        return code_path, requirements_path
+
+    def _record_log(self, process: "_ServiceProcess", message: str) -> None:
+        timestamp = datetime.now(UTC).isoformat()
+        process.logs.append(f"[{timestamp}] {message}")
+        process.logs = process.logs[-200:]
+
+    def _start_service(self, process: "_ServiceProcess", port: int) -> None:
         if uvicorn is None or FastAPI is None:
             raise RuntimeError("FastAPI or uvicorn is unavailable in this environment")
-        if self._server_thread and self._server_thread.is_alive():
+
+        for existing in self._services.values():
+            if (
+                existing.name != process.name
+                and existing.status == "running"
+                and existing.port == port
+            ):
+                raise RuntimeError(f"Port {port} is already in use by {existing.name}")
+
+        if process.thread and process.thread.is_alive():
             return
 
-        config = uvicorn.Config(self._app, host="0.0.0.0", port=port, log_level="warning")
+        config = uvicorn.Config(process.app, host="0.0.0.0", port=port, log_level="warning")
         server = uvicorn.Server(config)
-        self._uvicorn_server = server
+        process.server = server
+        process.port = port
 
         def _run():  # pragma: no cover - runtime helper
             server.run()
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
-        self._server_thread = thread
+        process.thread = thread
+        process.status = "running"
+        self._record_log(process, f"service '{process.name}' started on port {port}")
 
-    def stop(self) -> None:
-        if self._uvicorn_server is not None:
-            self._uvicorn_server.should_exit = True
-        if self._server_thread and self._server_thread.is_alive():
-            self._server_thread.join(timeout=2.0)
-        self._server_thread = None
-        self._uvicorn_server = None
+    def _stop_service(self, process: "_ServiceProcess") -> None:
+        if process.server is not None:
+            process.server.should_exit = True
+        if process.thread and process.thread.is_alive():
+            process.thread.join(timeout=2.0)
+        process.thread = None
+        process.server = None
+        process.status = "stopped"
+        self._record_log(process, f"service '{process.name}' stopped")
+
+    def _find_service(self, service_name: str | None, port: Optional[int]) -> "_ServiceProcess":
+        if service_name and service_name in self._services:
+            return self._services[service_name]
+        if port is not None:
+            for process in self._services.values():
+                if process.port == port:
+                    return process
+        if self._last_service and self._last_service in self._services:
+            return self._services[self._last_service]
+        raise RuntimeError("No matching microservice is available")
+
+    def _summaries(self) -> List[Dict[str, Any]]:
+        summaries = []
+        for process in self._services.values():
+            summaries.append(
+                {
+                    "service_name": process.name,
+                    "port": process.port,
+                    "status": process.status,
+                    "code_path": str(process.code_path),
+                    "requirements_path": str(process.requirements_path),
+                }
+            )
+        return summaries
+
+    def execute(
+        self,
+        description: str | List[Dict[str, Any]] | None = None,
+        port: int = 8000,
+        auto_start: bool = False,
+        action: str = "create",
+        service_name: str | None = None,
+        limit: int = 50,
+    ) -> Dict[str, Any]:
+        normalized_name = (service_name or "microservice").strip() or "microservice"
+        action = (action or "create").lower()
+
+        if action == "list":
+            return {"status": "ok", "services": self._summaries()}
+
+        if action in {"stop", "restart", "logs"}:
+            process = self._find_service(normalized_name, port)
+            if action == "stop":
+                self._stop_service(process)
+                return {"status": process.status, "service_name": process.name, "port": process.port}
+            if action == "restart":
+                self._stop_service(process)
+                self._start_service(process, process.port)
+                return {"status": process.status, "service_name": process.name, "port": process.port}
+            try:
+                limit_count = max(int(limit), 0)
+            except (TypeError, ValueError):
+                limit_count = 50
+            return {
+                "status": process.status,
+                "service_name": process.name,
+                "logs": process.logs[-limit_count:],
+            }
+
+        if description is None:
+            raise ValueError("description is required when creating a microservice")
+
+        endpoints = self._parse_description(description)
+        code = self._render_code(endpoints)
+        self._audit(code)
+        app = self._sandbox_execute(code)
+        code_path, requirements_path = self._write_files(normalized_name, code)
+        run_command = f"cd {code_path.parent} && uvicorn app:app --host 0.0.0.0 --port {port}"
+
+        process = _ServiceProcess(
+            name=normalized_name,
+            app=app,
+            endpoints=endpoints,
+            code=code,
+            code_path=code_path,
+            requirements_path=requirements_path,
+            run_command=run_command,
+            port=port,
+        )
+        self._services[normalized_name] = process
+        self._last_service = normalized_name
+        result: Dict[str, Any] = {
+            "code": code,
+            "endpoints": endpoints,
+            "status": process.status,
+            "service_name": normalized_name,
+            "code_path": str(code_path),
+            "requirements_path": str(requirements_path),
+            "run_command": run_command,
+            "port": port,
+        }
+        if auto_start:
+            try:
+                self._start_service(process, port)
+                result["status"] = process.status
+            except Exception as exc:
+                process.status = f"error: {exc}"
+                self._record_log(process, f"failed to start: {exc}")
+                result["status"] = process.status  # pragma: no cover - runtime guard
+        return result
+
+    def start(self, port: int = 8000, service_name: str | None = None) -> None:
+        process = self._find_service(service_name, port)
+        self._start_service(process, port)
+
+    def stop(self, service_name: str | None = None, port: Optional[int] = None) -> None:
+        process = self._find_service(service_name, port)
+        self._stop_service(process)
+
+
+@dataclass
+class _ServiceProcess:
+    name: str
+    app: Any
+    endpoints: List[Dict[str, Any]]
+    code: str
+    code_path: Path
+    requirements_path: Path
+    run_command: str
+    port: int
+    status: str = "ready"
+    server: Any | None = None
+    thread: threading.Thread | None = None
+    logs: List[str] = field(default_factory=list)
 
 
 MICROSERVICE_BUILDER_TOOL = MicroserviceBuilder()

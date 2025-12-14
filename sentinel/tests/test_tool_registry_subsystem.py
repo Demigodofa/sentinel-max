@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from sentinel.agent_core.base import Tool
@@ -117,3 +119,37 @@ def test_microservice_builder_endpoint_alias():
     )
 
     assert normalized == {"description": endpoints, "auto_start": True}
+
+
+class _RepairTool(Tool):
+    def __init__(self):
+        super().__init__("repair")
+        self.schema = ToolSchema(
+            name="repair",
+            version="1.0.0",
+            description="repair",
+            input_schema={},
+            output_schema={"foo": "string"},
+            permissions=["use"],
+        )
+
+    def execute(self, foo: str = "ok"):
+        return {"foo": foo}
+
+
+def test_tool_repair_alias_persistence(tmp_path):
+    registry = ToolRegistry()
+    registry.configure_alias_persistence(tmp_path)
+    registry.register(_RepairTool())
+
+    result = registry.call("repair", foo="value", stray="drop")
+    assert result == {"foo": "value"}
+
+    alias_file = tmp_path / "tool_aliases.json"
+    assert alias_file.exists()
+
+    saved = json.loads(alias_file.read_text(encoding="utf-8"))
+    assert saved == {"repair": {"stray": None}}
+
+    result_again = registry.call("repair", stray="ignored", foo="next")
+    assert result_again == {"foo": "next"}
