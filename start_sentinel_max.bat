@@ -38,14 +38,17 @@ if not exist "%SENTINEL_PROJECT_STORAGE%" mkdir "%SENTINEL_PROJECT_STORAGE%" >nu
 >>"%LOG%" echo StorageDir:  %SENTINEL_STORAGE_DIR%
 >>"%LOG%" echo ProjectsDir: %SENTINEL_PROJECT_STORAGE%
 
-REM ---- LLM (OpenAI) ----
-set "SENTINEL_OPENAI_BASE_URL=https://api.openai.com/v1"
-set "SENTINEL_OPENAI_MODEL=gpt-4o"
-set "SENTINEL_OPENAI_TIMEOUT_SECS=60"
-set "SENTINEL_OPENAI_API_KEY="
+REM ---- LLM (OpenAI default, Ollama optional) ----
+set "SENTINEL_LLM_BACKEND=openai"
+set "SENTINEL_LLM_BASE_URL=https://api.openai.com/v1"
+set "SENTINEL_LLM_MODEL=gpt-4o"
+set "SENTINEL_LLM_WORKER_MODEL="
+set "SENTINEL_LLM_TIMEOUT_SECS=60"
+set "OPENAI_API_KEY="
 
->>"%LOG%" echo LLM_BASE_URL: %SENTINEL_OPENAI_BASE_URL%
->>"%LOG%" echo LLM_MODEL: %SENTINEL_OPENAI_MODEL%
+>>"%LOG%" echo LLM_BACKEND: %SENTINEL_LLM_BACKEND%
+>>"%LOG%" echo LLM_BASE_URL: %SENTINEL_LLM_BASE_URL%
+>>"%LOG%" echo LLM_MODEL: %SENTINEL_LLM_MODEL%
 
 REM ---- Python behavior ----
 set "PYTHONUNBUFFERED=1"

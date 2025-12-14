@@ -27,14 +27,15 @@ class LLMClientError(Exception):
 class LLMClient:
     """OpenAI Chat Completions client with retries and health checks."""
 
-    backend = "openai"
-
     def __init__(self, cfg: LLMConfig | None = None) -> None:
         self.cfg = cfg or load_llm_config()
+        self.backend = self.cfg.backend
 
     @property
     def enabled(self) -> bool:
-        return bool(self.cfg.api_key)
+        if self.backend == "openai":
+            return bool(self.cfg.api_key)
+        return True
 
     def _build_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -130,6 +131,50 @@ class LLMClient:
             logger.error(message)
             return message
 
+    def chat_with_tools(
+        self,
+        messages: list[dict[str, object]],
+        tools: list[dict[str, object]],
+        *,
+        max_tokens: int = 600,
+        model_override: str | None = None,
+    ) -> dict[str, object] | None:
+        """Call the chat API with tool/function metadata."""
+
+        if not self.enabled:
+            logger.error("LLM backend disabled; cannot run tool calls")
+            return None
+
+        payload: dict[str, object] = {
+            "model": model_override or self.cfg.model,
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": "auto",
+            "max_tokens": max_tokens,
+            "temperature": self.cfg.temperature,
+        }
+
+        try:
+            data, request_id, latency_ms = self._post_json("/chat/completions", payload)
+            logger.info(
+                "LLM tool-call request backend=%s model=%s base_url=%s latency_ms=%.2f request_id=%s",
+                self.backend,
+                payload["model"],
+                self.cfg.base_url,
+                latency_ms,
+                request_id,
+            )
+            return (data.get("choices") or [{}])[0].get("message") or {}
+        except Exception as exc:
+            logger.error(
+                "Tool-call request failed backend=%s model=%s base_url=%s error=%s",
+                self.backend,
+                payload.get("model"),
+                self.cfg.base_url,
+                exc,
+            )
+            return None
+
     def health_check(self) -> Tuple[bool, str]:
         if not self.enabled:
             message = (
@@ -142,6 +187,16 @@ class LLMClient:
                 self.cfg.base_url,
             )
             return False, message
+
+        if self.backend != "openai":
+            message = f"LLM backend '{self.backend}' configured; health check skipped"
+            logger.info(
+                "LLM health check skipped backend=%s model=%s base_url=%s",
+                self.backend,
+                self.cfg.model,
+                self.cfg.base_url,
+            )
+            return True, message
 
         payload: dict[str, Any] = {
             "model": self.cfg.model,
@@ -175,6 +230,11 @@ class LLMClient:
                 exc,
             )
             return False, f"LLM health check failed: {exc}"
+
+    def supports_tool_calls(self) -> bool:
+        """Return True when backend supports OpenAI-style tool calling."""
+
+        return self.backend == "openai"
 
 
 DEFAULT_SYSTEM_PROMPT = (

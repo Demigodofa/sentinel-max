@@ -10,6 +10,7 @@ from uuid import uuid4
 if TYPE_CHECKING:
     from sentinel.agent_core.autonomy import AutonomyLoop
 from sentinel.agent_core.base import ExecutionTrace
+from sentinel.config.sandbox_config import ensure_sandbox_root_exists
 from sentinel.logging.logger import get_logger
 from sentinel.logging.stage_logger import PipelineStageLogger
 from sentinel.memory.memory_manager import MemoryManager
@@ -40,6 +41,7 @@ class ConversationController:
         world_model: WorldModel,
         simulation_sandbox: Optional[SimulationSandbox] = None,
         multi_agent_engine: Optional[MultiAgentEngine] = None,
+        orchestrator=None,
         llm_client=None,
     ) -> None:
         self.dialog_manager = dialog_manager
@@ -60,6 +62,7 @@ class ConversationController:
             world_model=self.world_model,
             dialog_manager=self.dialog_manager,
         )
+        self.orchestrator = orchestrator
         self.auto_mode_enabled: bool = False
         self.pending_goal: Optional[NormalizedGoal] = None
         self.pending_plan: Optional[dict] = None
@@ -97,6 +100,9 @@ class ConversationController:
         if self.auto_mode_enabled and self._auto_expired():
             self._disable_auto_mode()
 
+        if normalized_text.startswith("/mechanic"):
+            return self._handle_mechanic_check(session_context)
+
         # ------------------------------------------------------------
         # 1) Slash commands ALWAYS win (do not send to intent engine)
         # ------------------------------------------------------------
@@ -107,6 +113,29 @@ class ConversationController:
 
         if normalized_text.startswith("/tool"):
             return self._handle_direct_tool_call(text, session_context, stage_logger)
+
+        if any(phrase in normalized_text for phrase in ("list tools", "what tools", "available tools")):
+            tools = sorted(self.planner.tool_registry.list_tools().keys())
+            response = self.dialog_manager.format_agent_response(
+                "Available tools:\n" + ("\n".join(tools) if tools else "(none registered)")
+            )
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": tools,
+                "dialog_context": session_context,
+            }
+
+        if self.orchestrator and self.orchestrator.should_route(raw):
+            orchestration = self.orchestrator.handle(
+                raw, stage_logger=stage_logger, session_context=session_context
+            )
+            response = self.dialog_manager.format_agent_response(orchestration.get("response", ""))
+            orchestration["response"] = response
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return orchestration
 
         if self.pending_plan and self._is_execution_confirmation(normalized_text):
             turns, ttl = self._parse_auto_budget(normalized_text)
@@ -705,6 +734,59 @@ class ConversationController:
             "trace": None,
             "dialog_context": session_context,
         }
+
+    def _handle_mechanic_check(self, session_context: Dict[str, object]) -> Dict[str, object]:
+        sandbox_root = ensure_sandbox_root_exists()
+        tools = sorted(self.planner.tool_registry.list_tools().keys())
+        llm_ok, llm_message = (False, "LLM client not configured")
+        if self.llm_client:
+            llm_ok, llm_message = self.llm_client.health_check()
+
+        memory_ok = False
+        memory_message = ""
+        probe_key = f"mechanic-{uuid4()}"
+        try:
+            self.memory.store_fact("diagnostics", key=probe_key, value={"probe": probe_key})
+            memory_ok = bool(self.memory.query("diagnostics", key=probe_key))
+            memory_message = "memory read/write passed"
+        except Exception as exc:  # pragma: no cover - defensive
+            memory_message = f"memory check failed: {exc}"
+
+        unused_tools, usage = self._dead_wood_report()
+        lines = [
+            f"Sandbox root: {sandbox_root}",
+            f"Tools registered ({len(tools)}): {', '.join(tools) if tools else 'none'}",
+            f"LLM connectivity: {'ok' if llm_ok else 'error'} — {llm_message}",
+            f"Memory check: {'ok' if memory_ok else 'error'} — {memory_message}",
+            f"Dead wood: {', '.join(unused_tools) if unused_tools else 'all tools recently used'}",
+        ]
+        response = self.dialog_manager.format_agent_response("\n".join(lines))
+        self.dialog_manager.record_turn(
+            "/mechanic", response, context=session_context, normalized_goal=None, task_graph=None
+        )
+        return {
+            "response": response,
+            "normalized_goal": None,
+            "task_graph": None,
+            "trace": usage,
+            "dialog_context": session_context,
+        }
+
+    def _dead_wood_report(self) -> Tuple[list[str], dict[str, int]]:
+        usage: dict[str, int] = {name: 0 for name in self.planner.tool_registry.list_tools().keys()}
+        namespaces = ("execution_real", "execution")
+        for namespace in namespaces:
+            for record in self.memory.recall_recent(namespace=namespace, limit=200):
+                value = record.get("value") if isinstance(record, dict) else None
+                if not isinstance(value, dict):
+                    continue
+                tool_name = value.get("tool") or value.get("metadata", {}).get("tool")
+                if not tool_name and isinstance(value.get("node"), dict):
+                    tool_name = value["node"].get("tool")
+                if tool_name and tool_name in usage:
+                    usage[tool_name] += 1
+        unused = [name for name, count in usage.items() if count == 0]
+        return unused, usage
 
     def _looks_like_task(self, normalized_text: str) -> bool:
         task_verbs = ("search", "browse", "create", "build", "write", "fix", "debug", "run")

@@ -23,6 +23,7 @@ from sentinel.execution.approval_gate import ApprovalGate
 from sentinel.execution.execution_controller import ExecutionController
 from sentinel.logging.logger import get_logger
 from sentinel.llm.client import LLMClient
+from sentinel.llm.orchestrator import ToolCallingOrchestrator
 from sentinel.memory.intelligence import MemoryContextBuilder
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.planning.adaptive_planner import AdaptivePlanner
@@ -109,6 +110,13 @@ class SentinelController:
             self.memory,
         )
 
+        self.tool_orchestrator = ToolCallingOrchestrator(
+            self.llm_client,
+            self.tool_registry,
+            self.sandbox,
+            memory=self.memory,
+        )
+
         self.reflection_engine = ReflectionEngine(
             self.memory,
             policy_engine=self.policy_engine,
@@ -135,6 +143,7 @@ class SentinelController:
             memory=self.memory,
             world_model=self.world_model,
             simulation_sandbox=self.simulation_sandbox,
+            orchestrator=self.tool_orchestrator,
             llm_client=self.llm_client,
         )
 
@@ -256,6 +265,10 @@ class SentinelController:
         if message.strip() == "/tools":
             tools = sorted(self.tool_registry.list_tools().keys())
             return "Available tools: " + (", ".join(tools) if tools else "No tools registered.")
+
+        if message.strip() == "/mechanic":
+            payload = self.conversation_controller._handle_mechanic_check({})
+            return str(payload.get("response", ""))
 
         if message.startswith("/tool"):
             parts = message.split(maxsplit=2)

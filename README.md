@@ -15,10 +15,10 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 ## Runtime pipeline
 
 - **Controller orchestration**: `SentinelController` instantiates memory, world model, tool registry, sandbox variants, policy engine, planner, worker, reflection, autonomy loop, research engine, and hot reload/self-modification guardrails. Default tools are registered during initialization, so missing tool errors usually mean controller startup failed.
-- **LLM connectivity**: Sentinel now uses the OpenAI Chat Completions API exclusively (default model `gpt-4o`). A startup health check asks the model to respond with “ok” and reports the outcome to CLI stdout, the GUI meta log, and `pipeline_events` for visibility. Structured logs include `backend=openai`, `model`, `base_url`, `request_id`, and `latency_ms`.
+- **LLM connectivity**: Sentinel now defaults to OpenAI Chat Completions with real tool/function calling (default model `gpt-4o`) and supports Ollama as an opt-in backend. A startup health check asks the model to respond with “ok” (skipped for non-OpenAI backends) and reports the outcome to CLI stdout, the GUI meta log, and `pipeline_events` for visibility. Structured logs include `backend`, `model`, `base_url`, `request_id`, and `latency_ms`.
 - **Conversation router**: `ConversationController` normalizes chat input, routes slash commands, requests confirmation when autonomy is off, and delivers accepted goals to the planner/worker/reflection loop. Slash-command flows (/auto, /tools, etc.) now retain pipeline correlation IDs so telemetry stays linked even when the intent engine is bypassed.
 - **Default tools**: Filesystem list/read/write/delete, sandboxed exec, deterministic web search, internet extractor, code analyzer, microservice builder, browser agent, and a configurable echo tool registered at startup.
-- **Direct tool execution**: `/tool <name> <json>` now runs the requested tool through the sandbox when available (with a registry fallback), so filesystem, sandbox exec, and web search tools execute for real rather than being simulated.
+- **Direct tool execution + orchestrator**: `/tool <name> <json>` and natural language requests ("list files in sandbox", "search web for ...", `action: <tool>`) now run through a tool-calling orchestrator that invokes the sandboxed registry for real and streams outputs back into the conversation instead of pretending to execute.
 - **Plan publication for GUI**: Executed task graphs are mirrored into simplified plan records under the `plans` namespace, enabling the GUI plan panel to render current steps instead of showing “No plan available.”
 - **State inspection**: `/state` in the CLI summarizes latest plan, execution, policy, and reflection records (with correlation IDs), and the GUI includes a pipeline state panel reading from `plans`, `execution*`, `reflection.*`, `policy_events`, and `pipeline_events`.
 
@@ -32,14 +32,16 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
    pip install -r sentinel/requirements.txt
    ```
 
-2. **Configure OpenAI access (required)**
+2. **Configure LLM access (required for OpenAI)**
 
-   Set the OpenAI environment variables before launching Sentinel:
+   Set the LLM environment variables before launching Sentinel (OpenAI by default, Ollama optional):
 
-   - `SENTINEL_OPENAI_API_KEY` (required)
-   - `SENTINEL_OPENAI_MODEL` (default: `gpt-4o`)
-   - `SENTINEL_OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
-   - `SENTINEL_OPENAI_TIMEOUT_SECS` (default: `60`)
+   - `OPENAI_API_KEY` (required for OpenAI endpoints)
+   - `SENTINEL_LLM_BACKEND` (default: `openai`, set to `ollama` for local models)
+   - `SENTINEL_LLM_MODEL` (default: `gpt-4o`)
+   - `SENTINEL_LLM_WORKER_MODEL` (optional cheaper model for secondary calls)
+   - `SENTINEL_LLM_BASE_URL` (default: `https://api.openai.com/v1` or `http://localhost:11434/v1` for Ollama)
+   - `SENTINEL_LLM_TIMEOUT_SECS` (default: `60`)
 
 3. **Run the agent**
 
@@ -50,7 +52,9 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
    ```
 
    - `/tools` lists registered tools; `/tool <name> <json>` runs a tool through the sandbox.
+   - Natural requests like "list files in sandbox" or `action: fs_list {"path": "."}` trigger the OpenAI orchestrator and run the actual tools.
    - `/auto on` enables confirmation-free autonomy for the current session.
+   - `/mechanic` runs a diagnostics checklist (LLM health, sandbox access, memory read/write, and unused tool report).
 
 4. **Execute the full test suite**
 
