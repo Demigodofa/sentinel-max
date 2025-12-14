@@ -58,6 +58,9 @@ class SentinelController:
 
         # NOTE: DEFAULT_TOOL_REGISTRY may be a singleton; duplicate registration can happen on reload.
         self.tool_registry = DEFAULT_TOOL_REGISTRY
+        self.tool_registry.set_event_sink(
+            lambda event: self.memory.store_fact("tool_events", key=None, value=event)
+        )
 
         ensure_sandbox_root_exists()
         self.sandbox = Sandbox()
