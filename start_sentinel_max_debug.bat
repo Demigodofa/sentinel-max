@@ -3,104 +3,126 @@ setlocal EnableExtensions EnableDelayedExpansion
 title Sentinel MAX Launcher (DEBUG)
 color 0A
 
-REM Always run from the folder this .bat lives in
+REM Always run from repo root (folder this .bat lives in)
 cd /d "%~dp0"
+set "REPO=%cd%"
+
+REM ---- Logs ----
+if not exist "%REPO%\logs" mkdir "%REPO%\logs" >nul 2>&1
+
+for /f "tokens=1-3 delims=/.- " %%a in ("%date%") do set "D=%%c-%%a-%%b"
+for /f "tokens=1-4 delims=:., " %%a in ("%time%") do set "T=%%a%%b%%c%%d"
+set "LOG=%REPO%\logs\gui_debug_%D%_%T%.log"
+
+call :log ===== START %date% %time% =====
+call :log Repo: %REPO%
+call :log Computer: %COMPUTERNAME%
 
 echo.
 echo ================================
 echo   Sentinel MAX Launcher (DEBUG)
 echo ================================
-echo Repo: %cd%
+echo Repo: %REPO%
 echo Computer: %COMPUTERNAME%
+echo Log: %LOG%
 echo.
 
-REM ---- External SSD sandbox paths ----
-set "SENTINEL_STORAGE_DIR=F:\Sandbox\sentinel-data\memory"
-set "SENTINEL_PROJECT_STORAGE=F:\Sandbox\sentinel-data\projects"
+REM ---- Sandbox + storage (your SSD paths) ----
+set "SENTINEL_SANDBOX_ROOT=F:\Sandbox"
+set "SENTINEL_STORAGE_DIR=%SENTINEL_SANDBOX_ROOT%\sentinel-data\memory"
+set "SENTINEL_PROJECT_STORAGE=%SENTINEL_SANDBOX_ROOT%\sentinel-data\projects"
 
-if not exist "%SENTINEL_STORAGE_DIR%" mkdir "%SENTINEL_STORAGE_DIR%" >nul 2>&1
-if not exist "%SENTINEL_PROJECT_STORAGE%" mkdir "%SENTINEL_PROJECT_STORAGE%" >nul 2>&1
+for %%p in ("%SENTINEL_SANDBOX_ROOT%" "%SENTINEL_STORAGE_DIR%" "%SENTINEL_PROJECT_STORAGE%") do (
+  if not exist "%%~p" mkdir "%%~p" >nul 2>&1
+)
+
+call :log SandboxRoot: %SENTINEL_SANDBOX_ROOT%
+call :log StorageDir:  %SENTINEL_STORAGE_DIR%
+call :log ProjectsDir: %SENTINEL_PROJECT_STORAGE%
 
 REM ---- LLM backend (Ollama) ----
 set "SENTINEL_LLM_BACKEND=ollama"
-set "SENTINEL_LLM_BASE_URL=http://localhost:11434/v1"
-set "SENTINEL_LLM_MODEL=qwen2.5:1.5b"
+set "SENTINEL_LLM_BASE_URL=http://127.0.0.1:11434/v1"
+REM Use an installed model (your tags show qwen2.5:7b exists)
+set "SENTINEL_LLM_MODEL=qwen2.5:7b"
 set "SENTINEL_LLM_API_KEY=ollama"
 
-REM ---- Per-computer venv on the SSD ----
-set "VENV_DIR=.venv-%COMPUTERNAME%"
-set "VENV_PY=%cd%\%VENV_DIR%\Scripts\python.exe"
+call :log LLM_BASE_URL: %SENTINEL_LLM_BASE_URL%
+call :log LLM_MODEL: %SENTINEL_LLM_MODEL%
 
-echo Using venv: %VENV_DIR%
-echo.
-
-REM ---- Check Python launcher ----
-py --version >nul 2>&1
-if %errorlevel% neq 0 (
-  echo ERROR: Python launcher 'py' is not working on this PC.
-  echo Try: py -0p
+REM ---- Pick Python (DO NOT depend on py launcher) ----
+set "PY_CREATE=C:\Program Files\Python312\python.exe"
+if not exist "%PY_CREATE%" (
+  for /f "delims=" %%P in ('where python 2^>nul') do (set "PY_CREATE=%%P" & goto :py_found)
+  echo ERROR: Python not found.>>"%LOG%"
+  echo ERROR: Python not found.
   pause
   exit /b 1
 )
+:py_found
 
-REM ---- Create venv if missing ----
+call :log PythonSelected: %PY_CREATE%
+"%PY_CREATE%" --version >> "%LOG%" 2>&1
+
+REM ---- Per-computer venv ----
+set "VENV_DIR=%REPO%\.venv-%COMPUTERNAME%"
+set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
+call :log VenvDir: %VENV_DIR%
+
 if not exist "%VENV_PY%" (
-  echo Venv not found. Creating: %VENV_DIR%
-  py -3.12 -m venv "%VENV_DIR%"
-  if %errorlevel% neq 0 (
-    echo ERROR: Failed to create venv. Ensure Python 3.12 is installed.
-    pause
-    exit /b 1
-  )
+  echo Creating venv: %VENV_DIR%
+  call :log Creating venv...
+  "%PY_CREATE%" -m venv "%VENV_DIR%" >> "%LOG%" 2>&1
+  if errorlevel 1 goto :fail
 
   echo Installing dependencies...
-  "%VENV_PY%" -m pip install --upgrade pip >nul 2>&1
-  "%VENV_PY%" -m pip install -r ".\sentinel\requirements.txt"
-  if %errorlevel% neq 0 (
-    echo ERROR: pip install failed.
-    pause
-    exit /b 1
-  )
+  call "%VENV_PY%" -m pip install --upgrade pip >> "%LOG%" 2>&1
+  call "%VENV_PY%" -m pip install -r "%REPO%\sentinel\requirements.txt" >> "%LOG%" 2>&1
+  if errorlevel 1 goto :fail
 )
 
-REM ---- Make sure imports resolve from repo root ----
-set "PYTHONPATH=%cd%"
+REM ---- Make imports resolve from repo root ----
+set "PYTHONPATH=%REPO%"
 
-REM ---- Better crash output ----
+REM ---- Better visibility in logs ----
+set "PYTHONUNBUFFERED=1"
 set "PYTHONFAULTHANDLER=1"
 
-REM ---- Log file ----
-if not exist ".\logs" mkdir ".\logs" >nul 2>&1
-for /f "tokens=1-3 delims=/.- " %%a in ("%date%") do set d=%%c-%%a-%%b
-for /f "tokens=1-3 delims=:." %%a in ("%time%") do set t=%%a%%b%%c
-set "LOG=logs\gui_debug_%d%_%t%.log"
+REM ---- Live tail window so you can see where it stalls ----
+echo Opening a live log tail window...
+start "Sentinel Log Tail" powershell -NoProfile -Command "Get-Content -Path '%LOG%' -Wait -Tail 120"
 
-echo Writing log to: %LOG%
-echo ===== START %date% %time% ===== > "%LOG%"
-echo Repo: %cd% >> "%LOG%"
-echo Venv: %VENV_DIR% >> "%LOG%"
-echo Python: >> "%LOG%"
-"%VENV_PY%" --version >> "%LOG%" 2>&1
-echo. >> "%LOG%"
+REM ---- Quick Ollama ping ----
+call :log Ollama /api/tags (3s timeout)
+curl.exe --max-time 3 http://127.0.0.1:11434/api/tags >> "%LOG%" 2>&1
 
-echo Ollama tags (api/tags): >> "%LOG%"
-curl.exe http://localhost:11434/api/tags >> "%LOG%" 2>&1
-echo. >> "%LOG%"
+REM ---- Pull latest (safe mode) ----
+call :log git pull --ff-only
+git pull --ff-only >> "%LOG%" 2>&1
 
-REM ---- Git pull (optional, but keep it visible) ----
-echo Pulling latest updates from GitHub...
-git pull >> "%LOG%" 2>&1
-echo. >> "%LOG%"
-
-REM ---- Launch GUI ----
+echo.
 echo Launching GUI...
-"%VENV_PY%" -m sentinel.main --mode gui >> "%LOG%" 2>&1
+echo TIP: If it looks stuck, press Ctrl+Break to dump Python stacks into the LOG.
+call :log Launching GUI (Ctrl+Break to dump stacks)
+
+REM -u + faulthandler so stack dumps and prints actually show up
+"%VENV_PY%" -u -X faulthandler -m sentinel.main --mode gui >> "%LOG%" 2>&1
+
+if errorlevel 1 goto :fail
 
 echo.
-echo GUI process exited. Tail of log:
-echo --------------------------------------------
-powershell -NoProfile -Command "Get-Content -Tail 120 '%LOG%'"
-echo --------------------------------------------
-echo.
+echo GUI exited. Tail:
+powershell -NoProfile -Command "Get-Content -Tail 160 '%LOG%'"
 pause
-endlocal
+exit /b 0
+
+:fail
+echo.
+echo ERROR: Sentinel failed or crashed. Tail:
+powershell -NoProfile -Command "Get-Content -Tail 220 '%LOG%'"
+pause
+exit /b 1
+
+:log
+>>"%LOG%" echo %*
+exit /b 0
