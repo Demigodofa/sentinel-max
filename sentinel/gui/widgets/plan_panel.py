@@ -1,9 +1,9 @@
-"""Plan panel widget for displaying plan steps."""
+﻿"""Plan panel widget for displaying plan steps."""
 from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Iterable
+from typing import Iterable, Any
 
 from sentinel.agent_core.base import PlanStep
 from sentinel.planning.task_graph import TaskNode
@@ -16,8 +16,6 @@ class PlanPanel(ttk.Frame):
     def __init__(self, master: tk.Misc, theme: dict | None = None) -> None:
         self.theme = theme or load_theme()
         super().__init__(master, padding=self.theme["spacing"]["pad"], style="PlanPanel.TFrame")
-        self._wraplength = 300
-        self._wrappable_labels: list[ttk.Label] = []
         self._configure_styles()
         self._build_widgets()
 
@@ -45,14 +43,36 @@ class PlanPanel(ttk.Frame):
             background=colors["panel_bg"],
             foreground=colors.get("muted_text", colors.get("muted", "#888888")),
             font=self.theme["fonts"]["body"],
-            wraplength=self._wraplength,
+            wraplength=260,
             justify="left",
         )
 
     def _build_widgets(self) -> None:
         colors = self.theme["colors"]
         self.configure(style="PlanPanel.TFrame")
-        self.canvas = tk.Canvas(self, background=colors["panel_bg"], highlightthickness=0, width=320)
+
+        # Header (goal + version) sits above the scrollable list.
+        header = ttk.Frame(self, style="PlanPanel.TFrame")
+        header.grid(row=0, column=0, columnspan=2, sticky="ew")
+        header.columnconfigure(0, weight=1)
+
+        self._goal_var = tk.StringVar(value="Plan")
+        self._goal_label = ttk.Label(
+            header,
+            textvariable=self._goal_var,
+            style="PlanStepTitle.TLabel",
+        )
+        self._goal_label.grid(row=0, column=0, sticky="w")
+
+        self._version_var = tk.StringVar(value="")
+        self._version_label = ttk.Label(
+            header,
+            textvariable=self._version_var,
+            style="PlanStepBody.TLabel",
+        )
+        self._version_label.grid(row=1, column=0, sticky="w")
+
+        self.canvas = tk.Canvas(self, background=colors["panel_bg"], highlightthickness=0)
         self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.inner = ttk.Frame(self.canvas, style="PlanPanel.TFrame")
 
@@ -61,21 +81,40 @@ class PlanPanel(ttk.Frame):
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
         )
 
-        self._inner_window = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        window = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        self.canvas.bind("<Configure>", self._handle_canvas_configure)
+        self.canvas.bind(
+            "<Configure>", lambda e: self.canvas.itemconfigure(window, width=e.width)
+        )
 
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-        self.scrollbar.grid(row=0, column=1, sticky="ns")
+        self.canvas.grid(row=1, column=0, sticky="nsew")
+        self.scrollbar.grid(row=1, column=1, sticky="ns")
 
-        self.rowconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
         self.columnconfigure(0, weight=1)
-        self.inner.columnconfigure(0, weight=1)
 
-    def update_plan(self, steps: Iterable[PlanStep | TaskNode] | None) -> None:
-        """Render plan steps or task nodes in the panel."""
+    def update_plan(self, payload: Any) -> None:
+        """Render the current plan.
 
-        self._wrappable_labels.clear()
+        The GUI bridge may send either:
+        - an Iterable[PlanStep|TaskNode]
+        - a dict payload: {"goal": str|None, "version": int|None, "steps": [...]}.
+        """
+
+        goal = None
+        version = None
+        steps = payload
+        if isinstance(payload, dict):
+            goal = payload.get("goal")
+            version = payload.get("version")
+            steps = payload.get("steps")
+
+        if goal:
+            self._goal_var.set(f"Goal: {goal}")
+        else:
+            self._goal_var.set("Plan")
+        self._version_var.set(f"Version: {version}" if version else "")
+
         for child in self.inner.winfo_children():
             child.destroy()
 
@@ -85,19 +124,28 @@ class PlanPanel(ttk.Frame):
                 text="No plan available",
                 style="PlanStepBody.TLabel",
             )
-            self._register_wrappable(empty)
             empty.pack(anchor="w", padx=self.theme["spacing"]["pad"], pady=self.theme["spacing"]["pad_small"])
             return
 
         for step in steps:
             frame = ttk.Frame(self.inner, style="PlanStep.TFrame")
             step_id = getattr(step, "step_id", None) or getattr(step, "id", "?")
+
+            status = ""
+            meta = getattr(step, "metadata", None) or {}
+            if isinstance(meta, dict):
+                if meta.get("status") == "done":
+                    status = "Γ£à "
+                elif meta.get("status") == "failed":
+                    status = "Γ¥î "
+                elif meta.get("status"):
+                    status = "ΓÅ│ "
+
             title = ttk.Label(
                 frame,
-                text=f"Step {step_id}: {step.description}",
+                text=f"{status}Step {step_id}: {step.description}",
                 style="PlanStepTitle.TLabel",
             )
-            self._register_wrappable(title)
             title.pack(anchor="w")
 
             details = []
@@ -116,7 +164,6 @@ class PlanPanel(ttk.Frame):
                     text="\n".join(details),
                     style="PlanStepBody.TLabel",
                 )
-                self._register_wrappable(body)
                 body.pack(anchor="w", pady=(self.theme["spacing"]["pad_small"], 0))
 
             frame.pack(
@@ -125,20 +172,3 @@ class PlanPanel(ttk.Frame):
                 padx=self.theme["spacing"]["pad"],
                 pady=(self.theme["spacing"]["pad_small"], self.theme["spacing"]["pad"]),
             )
-
-        self._update_wraplength(self._wraplength)
-
-    def _handle_canvas_configure(self, event: tk.Event) -> None:
-        self.canvas.itemconfigure(self._inner_window, width=event.width)
-        self._update_wraplength(max(200, event.width - 40))
-
-    def _register_wrappable(self, label: ttk.Label) -> None:
-        label.configure(wraplength=self._wraplength, justify="left", anchor="w")
-        self._wrappable_labels.append(label)
-
-    def _update_wraplength(self, wraplength: int) -> None:
-        if wraplength == self._wraplength:
-            return
-        self._wraplength = wraplength
-        for label in self._wrappable_labels:
-            label.configure(wraplength=self._wraplength, justify="left", anchor="w")

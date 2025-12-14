@@ -10,7 +10,7 @@ from sentinel.agent_core.base import PlanStep
 from sentinel.conversation import MessageDTO
 from sentinel.controller import SentinelController
 
-PlanUpdateCallback = Callable[[List[PlanStep]], None]
+PlanUpdateCallback = Callable[[dict], None]
 LogUpdateCallback = Callable[[List[str]], None]
 AgentResponseCallback = Callable[[str], None]
 
@@ -73,8 +73,8 @@ class ControllerBridge:
     def _emit_plan_update(self) -> None:
         if not self.on_plan_update:
             return
-        steps = self._collect_plan_steps()
-        self.on_plan_update(steps)
+        plan_payload = self._collect_plan_payload()
+        self.on_plan_update(plan_payload)
 
     def _emit_log_update(self) -> None:
         if not self.on_log_update:
@@ -88,19 +88,87 @@ class ControllerBridge:
         state = self._collect_state_data()
         self.on_state_update(state)
 
-    def _collect_plan_steps(self, limit: int = 1) -> List[PlanStep]:
+    def _collect_plan_payload(self, limit: int = 1) -> dict:
+        """Return a GUI-friendly plan payload.
+
+        Notes
+        -----
+        Plan records in memory may come from different planner versions.
+        We normalize older step shapes (e.g. {id,title,depends_on}) into
+        PlanStep-compatible objects so the Plan panel is always populated.
+        """
+
         records = self.controller.memory.recall_recent(limit=limit, namespace="plans")
         if not records:
-            return []
+            return {"goal": None, "version": None, "steps": []}
+
         plan_entry = records[0].get("value", {})
-        steps_raw: Iterable[dict] = plan_entry.get("steps", []) if isinstance(plan_entry, dict) else []
+        if not isinstance(plan_entry, dict):
+            return {"goal": None, "version": None, "steps": []}
+
+        goal = plan_entry.get("goal")
+        version = plan_entry.get("version")
+        steps_raw: Iterable[dict] = plan_entry.get("steps", []) or []
+
+        # Map recent execution results onto plan steps (✅/❌ in the UI)
+        exec_records = self.controller.memory.recall_recent(limit=200, namespace="execution")
+        status_by_task: dict[str, str] = {}
+        for rec in exec_records:
+            value = rec.get("value")
+            if not isinstance(value, dict):
+                continue
+            task = value.get("task")
+            if not task:
+                continue
+            success = value.get("success")
+            if success is True:
+                status_by_task[str(task)] = "done"
+            elif success is False:
+                status_by_task[str(task)] = "failed"
+
         steps: List[PlanStep] = []
-        for raw in steps_raw:
+        for idx, raw in enumerate(steps_raw, start=1):
+            if not isinstance(raw, dict):
+                continue
+            # New format: already matches PlanStep
+            if "step_id" in raw and "description" in raw:
+                try:
+                    step = PlanStep(**raw)
+                    node_id = (raw.get("metadata") or {}).get("node_id")
+                    if node_id and node_id in status_by_task:
+                        step.metadata = dict(step.metadata)
+                        step.metadata["status"] = status_by_task[node_id]
+                    steps.append(step)
+                    continue
+                except Exception:
+                    pass
+
+            # Legacy format: {id,title,depends_on}
+            node_id = raw.get("id")
+            description = raw.get("description") or raw.get("title") or str(node_id or "")
+            tool_name = raw.get("tool_name") or raw.get("tool")
+            params = raw.get("params") or raw.get("args") or {}
+            depends_on = raw.get("depends_on") or raw.get("requires") or []
+
+            meta = {"node_id": node_id, "raw": raw}
+            if node_id and str(node_id) in status_by_task:
+                meta["status"] = status_by_task[str(node_id)]
+
             try:
-                steps.append(PlanStep(**raw))
+                steps.append(
+                    PlanStep(
+                        step_id=idx,
+                        description=description,
+                        tool_name=tool_name,
+                        params=params,
+                        depends_on=list(depends_on) if isinstance(depends_on, list) else [],
+                        metadata=meta,
+                    )
+                )
             except Exception:
                 continue
-        return steps
+
+        return {"goal": goal, "version": version, "steps": steps}
 
     def _collect_logs(self, limit: int = 50) -> List[str]:
         records = self.controller.memory.recall_recent(limit=limit)

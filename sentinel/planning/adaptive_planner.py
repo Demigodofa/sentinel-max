@@ -354,17 +354,30 @@ class AdaptivePlanner:
         self, goal: str, graph: TaskGraph, context: PlanContext, reflection: Optional[Dict[str, Any]] = None
     ) -> None:
         try:
-            steps = [
-                {
-                    "id": getattr(node, "id", ""),
-                    "title": getattr(node, "title", "")
+            # GUI/CLI-friendly plan steps.
+            # NOTE: Keep this aligned with sentinel.agent_core.base.PlanStep so the GUI can render it
+            # without needing fragile key-mapping.
+            steps = []
+            for idx, node in enumerate(graph, start=1):
+                description = (
+                    getattr(node, "title", "")
                     or getattr(node, "action", "")
+                    or getattr(node, "description", "")
                     or getattr(node, "tool", "")
-                    or node.description,
-                    "depends_on": getattr(node, "depends_on", []) or getattr(node, "requires", []) or [],
-                }
-                for node in graph
-            ]
+                    or getattr(node, "id", "")
+                )
+                steps.append(
+                    {
+                        "step_id": idx,
+                        "description": description,
+                        "tool_name": getattr(node, "tool", None),
+                        "params": getattr(node, "args", {}) or {},
+                        # Keep original node ids in metadata so we can correlate execution results.
+                        "metadata": {"node_id": getattr(node, "id", "")},
+                        # For readability (and backwards-compat), keep dependency node ids here.
+                        "depends_on": list(getattr(node, "requires", []) or []),
+                    }
+                )
             version = self._next_plan_version(goal)
             graph.add_metadata(plan_version=version)
             payload = {
