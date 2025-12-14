@@ -172,7 +172,12 @@ class ToolRegistry:
                 "top_k": "max_results",
             },
             "microservice_builder": {"endpoints": "description"},
-            "sandbox_exec": {"command": "argv"},
+            "sandbox_exec": {
+                "cmd": "argv",
+                "command": "argv",
+                "cmdline": "argv",
+                "args": "argv",
+            },
         }
         normalized: Dict[str, Any] = dict(kwargs)
 

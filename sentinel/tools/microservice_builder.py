@@ -1,9 +1,9 @@
 """Generate small FastAPI microservices safely."""
 from __future__ import annotations
 
-import textwrap
 import threading
-from types import MappingProxyType
+import sys
+from types import MappingProxyType, ModuleType
 from typing import Any, Dict, List
 
 try:  # Optional dependency
@@ -23,7 +23,15 @@ from sentinel.tools.tool_schema import ToolSchema
 
 logger = get_logger(__name__)
 
-SAFE_BUILTINS = MappingProxyType({"__builtins__": {"len": len, "sum": sum, "min": min, "max": max}})
+SAFE_BUILTINS = MappingProxyType({
+    "__builtins__": {
+        "len": len,
+        "sum": sum,
+        "min": min,
+        "max": max,
+        "__import__": __import__,
+    }
+})
 
 
 def _ensure_fastapi() -> Any:
@@ -74,38 +82,44 @@ class MicroserviceBuilder(Tool):
         )
 
     def _render_code(self, endpoints: List[Dict[str, Any]]) -> str:
-        routes_code = []
+        lines: List[str] = [
+            "from fastapi import FastAPI",
+            "",
+            "app = FastAPI()",
+            "get = app.get",
+            "post = app.post",
+            "",
+        ]
         for endpoint in endpoints:
             path = endpoint.get("path", "/ping")
             method = endpoint.get("method", "get").lower()
             response = endpoint.get("response", {"message": "ok"})
             func_name = f"endpoint_{method}_{abs(hash(path)) % 10_000}"
-            routes_code.append(
-                textwrap.dedent(
-                    f"""
-                    @{method}("{path}")
-                    async def {func_name}():
-                        return {response!r}
-                    """
-                )
-            )
-        routes_block = "\n".join(routes_code)
-        return textwrap.dedent(
-            f"""
-            from fastapi import FastAPI
-
-            app = FastAPI()
-            get = app.get
-            post = app.post
-            {routes_block}
-            """
-        )
+            lines.append(f"@{method}(\"{path}\")")
+            lines.append(f"async def {func_name}():")
+            lines.append(f"    return {response!r}")
+            lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
 
     def _sandbox_execute(self, code: str) -> Any:
         namespace: Dict[str, Any] = dict(SAFE_BUILTINS)
         namespace["FastAPI"] = _ensure_fastapi()
-        exec(code, namespace, namespace)
-        return namespace.get("app")
+        restore_fastapi: tuple[str, ModuleType | None] | None = None
+        if FastAPI is None:
+            stub_module = ModuleType("fastapi")
+            stub_module.FastAPI = namespace["FastAPI"]  # type: ignore[attr-defined]
+            restore_fastapi = ("fastapi", sys.modules.get("fastapi"))
+            sys.modules["fastapi"] = stub_module
+        try:
+            exec(code, namespace, namespace)
+            return namespace.get("app")
+        finally:
+            if restore_fastapi:
+                name, original = restore_fastapi
+                if original is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = original
 
     def _audit(self, code: str) -> None:
         proposal = PatchProposal(target_file="generated_microservice.py", patch_text=code, rationale="auto")
