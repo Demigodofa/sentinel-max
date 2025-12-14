@@ -109,5 +109,6 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - Sandbox now restores the caller's builtins after each tool invocation to prevent lingering global mutations in tool callables.
 - Added `/toolhelp <tool>` for per-tool schema JSON and `/tools --json` for full schema dumps so CLI sessions can introspect registered tools directly.
 - Added regression coverage for tool argument normalization so alias inputs (`num_results`, `command`, `endpoints`) keep mapping to canonical schemas across web search, sandbox exec, and microservice builder flows.
+- GUI plan sidebar now enforces bounded width with wrapped text so the chat log remains visible; regression coverage added for the layout constraints.
 
 
