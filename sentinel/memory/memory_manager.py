@@ -41,6 +41,7 @@ class MemoryManager:
             base_dir = ensure_sandbox_root_exists() / "memory"
         base_dir = base_dir.expanduser().resolve()
         base_dir.mkdir(parents=True, exist_ok=True)
+        self.base_dir = base_dir
         self.evidence_dir = base_dir / "external_sources"
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
         self.symbolic = SymbolicMemory(base_dir / "symbolic_store.json")

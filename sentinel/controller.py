@@ -61,6 +61,10 @@ class SentinelController:
         self.tool_registry.set_event_sink(
             lambda event: self.memory.store_fact("tool_events", key=None, value=event)
         )
+        try:
+            self.tool_registry.configure_alias_persistence(self.memory.base_dir)
+        except Exception:  # pragma: no cover - defensive
+            logger.warning("Failed to configure tool alias persistence", exc_info=True)
 
         ensure_sandbox_root_exists()
         self.sandbox = Sandbox()
@@ -274,34 +278,47 @@ class SentinelController:
             return str(payload.get("response", ""))
 
         if message.startswith("/tool"):
-            parts = message.split(maxsplit=2)
-            if len(parts) < 3:
-                return "Usage: /tool <name> <json_args>"
+            commands = [line.strip() for line in message.splitlines() if line.strip()]
 
-            tool_name = parts[1]
-            raw_args = parts[2]
+            def _run_tool(cmd: str) -> str:
+                parts = cmd.split(maxsplit=2)
+                if len(parts) < 3:
+                    return "Usage: /tool <name> <json_args>"
 
-            try:
-                args = json.loads(raw_args) if raw_args else {}
-            except json.JSONDecodeError as exc:
-                return f"Invalid JSON args: {exc}"
+                tool_name = parts[1]
+                raw_args = parts[2]
 
-            if not isinstance(args, dict):
-                return "Tool arguments must be a JSON object."
+                try:
+                    args = json.loads(raw_args) if raw_args else {}
+                except json.JSONDecodeError as exc:
+                    return f"Invalid JSON args: {exc}"
 
-            has_tool = getattr(self.tool_registry, "has_tool", None)
-            if callable(has_tool):
-                if not has_tool(tool_name):
-                    return f"Tool '{tool_name}' not registered."
-            else:
-                if tool_name not in self.tool_registry.list_tools():
-                    return f"Tool '{tool_name}' not registered."
+                if not isinstance(args, dict):
+                    return "Tool arguments must be a JSON object."
 
-            try:
-                output = self.sandbox.execute(self.tool_registry.call, tool_name, **args)
-                return str(output)
-            except Exception as exc:  # pragma: no cover
-                return f"Tool '{tool_name}' execution failed: {exc}"
+                has_tool = getattr(self.tool_registry, "has_tool", None)
+                if callable(has_tool):
+                    if not has_tool(tool_name):
+                        return f"Tool '{tool_name}' not registered."
+                else:
+                    if tool_name not in self.tool_registry.list_tools():
+                        return f"Tool '{tool_name}' not registered."
+
+                try:
+                    output = self.sandbox.execute(self.tool_registry.call, tool_name, **args)
+                    return str(output)
+                except Exception as exc:  # pragma: no cover
+                    return f"Tool '{tool_name}' execution failed: {exc}"
+
+            if len(commands) == 1:
+                return _run_tool(commands[0])
+
+            responses = []
+            for cmd in commands:
+                if not cmd.startswith("/tool"):
+                    continue
+                responses.append(_run_tool(cmd))
+            return "\n".join(responses)
 
         if message.strip() == "/state":
             snapshot = self.pipeline_snapshot(limit=3)
