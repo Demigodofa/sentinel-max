@@ -377,9 +377,16 @@ class AdaptivePlanner:
                 "reflection": reflection or {},
             }
             self._persist_plan(goal, payload, metadata={"goal_type": context.goal_type, "version": version})
+            planning_metadata = {"type": "planning_trace", "goal": goal, "goal_type": context.goal_type, "version": version}
             self.memory.store_text(
                 graph.metadata.get("reasoning_trace", ""),
                 namespace="planning_traces",
+                metadata=planning_metadata,
+            )
+            self.memory.store_fact(
+                "planning_traces",
+                key=None,
+                value={"goal": goal, "trace": graph.metadata.get("reasoning_trace", ""), "version": version},
                 metadata=planning_metadata,
             )
         except Exception as exc:  # pragma: no cover - defensive logging
