@@ -32,3 +32,6 @@ logs/
 # Local secrets
 sentinel gpt api key.txt
 
+
+# local logs
+sentinel.log
