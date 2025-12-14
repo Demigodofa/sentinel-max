@@ -106,5 +106,7 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - PolicyEngine plan validation now returns a structured result and raises on violations unless callers pass `enforce=False` for advisory-only checks.
 - Web search now tries multiple DuckDuckGo endpoints with explicit block detection instead of returning empty successes, `/mechanic` reports tools unused in the recent lookback window, and the echo helper accepts either `text` or `message` inputs.
 - Tool registry normalization adds schema-driven aliases, coerces sandbox commands, emits telemetry via a configurable event sink, and retries tool calls once when unexpected keyword arguments are encountered.
+- Sandbox now restores the caller's builtins after each tool invocation to prevent lingering global mutations in tool callables.
+- Added `/toolhelp <tool>` for per-tool schema JSON and `/tools --json` for full schema dumps so CLI sessions can introspect registered tools directly.
 
 
