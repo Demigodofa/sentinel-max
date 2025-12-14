@@ -20,3 +20,12 @@ F:\\Sandbox/
 .venv*/
 logs/
 
+
+# Local backup files
+*.bak-*
+
+
+# Local venv + logs
+.venv-*/
+logs/
+
