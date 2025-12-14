@@ -102,5 +102,7 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - Added OpenAI tool-calling orchestrator (default backend) with Ollama fallback, hard guardrails against claiming execution without tool output, and natural-language routing for tool invocations.
 - Updated Windows launchers and LLM config env vars (`SENTINEL_LLM_*`, `OPENAI_API_KEY`, optional worker model) to match the orchestrator backend selection.
 - Introduced `/mechanic` diagnostics to verify tool registry health, sandbox access, LLM connectivity, memory read/write, and report unused tools.
+- Documented that the sandbox default spans the full `F:\` drive, while still refusing paths outside `SENTINEL_SANDBOX_ROOT`.
+- PolicyEngine plan validation now returns a structured result and raises on violations unless callers pass `enforce=False` for advisory-only checks.
 
 

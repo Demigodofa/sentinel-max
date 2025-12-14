@@ -62,9 +62,13 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
    python -m pytest sentinel/tests
    ```
 
-5. **Storage defaults (F:\\Sandbox)**
+5. **Storage defaults (F:\\ drive scope)**
 
-   The sandbox root defaults to `F:\\Sandbox` (configurable via `SENTINEL_SANDBOX_ROOT`), and both symbolic + vector memories now persist under `memory/` in that sandbox. Override with `SENTINEL_STORAGE_DIR` if you need a different memory location. External evidence (search queries, fetched pages, provenance metadata) is written to `memory/external_sources` alongside the stores for later retrieval; call `MemoryManager.load_external_source(<key>)` to read the persisted content and metadata in later sessions.
+   The sandbox root defaults to the entire `F:\\` drive (configurable via `SENTINEL_SANDBOX_ROOT`), and both symbolic + vector memories now persist under `memory/` in that sandbox. Override with `SENTINEL_STORAGE_DIR` if you need a different memory location. External evidence (search queries, fetched pages, provenance metadata) is written to `memory/external_sources` alongside the stores for later retrieval; call `MemoryManager.load_external_source(<key>)` to read the persisted content and metadata in later sessions.
+
+6. **Filesystem scope and common failure mode**
+
+   Filesystem tools (`fs_list`, `fs_read`, `fs_write`, `fs_delete`) are pinned to `SENTINEL_SANDBOX_ROOT`. With the default root set to the entire `F:\\` drive, absolute paths anywhere on that drive are allowed. Attempts to reach outside the sandbox (for example, another drive letter) will be rejected with `Refusing path outside sandbox` from the resolver in `filesystem_tools.py`, and the orchestrator will skip execution. To narrow or relocate the sandbox, override `SENTINEL_SANDBOX_ROOT` before launch.
 
 ## Tool summary
 
@@ -131,7 +135,7 @@ print(engine.dependency_issues(project["project_id"]))
 
 ### Safety & Governance
 
-- **PolicyEngine** guards project limits (goals, dependency depth, duration, refinement rounds) and blocks forbidden actions.
+- **PolicyEngine** guards project limits (goals, dependency depth, duration, refinement rounds) and blocks forbidden actions. Plan validation returns a structured result and raises by default; pass `enforce=False` to surface warnings without halting a flow.
 - **Structured policy outcomes**: Policy decisions now return an allow/block record with reasons and rewrites that flow into reflections and final responses for guided replanning.
 - **ProjectDependencyGraph** validates cycles, unresolved nodes, and computes depth before plans are persisted.
 - **ProjectMemory** provides atomic, versioned persistence with schema validation for goals, plans, histories, and reflections.

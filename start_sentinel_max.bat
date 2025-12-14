@@ -26,7 +26,7 @@ echo Writing log to: %LOG%
 echo.
 
 REM ---- Paths ----
-set "SENTINEL_SANDBOX_ROOT=F:\Sandbox"
+set "SENTINEL_SANDBOX_ROOT=F:\"
 set "SENTINEL_STORAGE_DIR=%SENTINEL_SANDBOX_ROOT%\sentinel-data\memory"
 set "SENTINEL_PROJECT_STORAGE=%SENTINEL_SANDBOX_ROOT%\sentinel-data\projects"
 
