@@ -6,7 +6,10 @@ import re
 import shlex
 import threading
 from copy import deepcopy
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional
+
+import json
 
 from sentinel.agent_core.base import Tool
 from sentinel.logging.logger import get_logger
@@ -29,6 +32,8 @@ class ToolRegistry:
         self._schemas: Dict[str, ToolSchema] = {}
         self._lock = threading.RLock()
         self._event_sink: Callable[[Dict[str, Any]], None] | None = None
+        self._alias_overrides: Dict[str, Dict[str, str | None]] = {}
+        self._alias_file: Path | None = None
 
     # ------------------------------------------------------------------
     # Registration utilities
@@ -63,6 +68,52 @@ class ToolRegistry:
             sink(event)
         except Exception:  # pragma: no cover - defensive logging
             logger.exception("Failed to emit tool registry event: %s", event)
+
+    def _load_alias_overrides(self) -> None:
+        if not self._alias_file or not self._alias_file.exists():
+            return
+        try:
+            data = json.loads(self._alias_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:  # pragma: no cover - defensive read
+            logger.warning("tool_aliases.json is corrupt; ignoring contents")
+            return
+        if not isinstance(data, dict):
+            return
+        cleaned: Dict[str, Dict[str, str | None]] = {}
+        for tool, mapping in data.items():
+            if not isinstance(mapping, dict):
+                continue
+            cleaned[tool] = {}
+            for alias, target in mapping.items():
+                if not isinstance(alias, str):
+                    continue
+                if isinstance(target, str) or target is None:
+                    cleaned[tool][alias] = target
+        self._alias_overrides = cleaned
+
+    def _persist_alias_overrides(self) -> None:
+        if not self._alias_file:
+            return
+        payload = {tool: mapping for tool, mapping in self._alias_overrides.items() if mapping}
+        tmp_path = self._alias_file.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        tmp_path.replace(self._alias_file)
+
+    def _record_alias_drop(self, tool: str, alias: str) -> None:
+        with self._lock:
+            current = self._alias_overrides.setdefault(tool, {})
+            if current.get(alias) is None:
+                current[alias] = None
+                self._persist_alias_overrides()
+
+    def configure_alias_persistence(self, storage_dir: str | Path) -> None:
+        """Configure persistence for learned argument aliases."""
+
+        base_path = Path(storage_dir).expanduser().resolve()
+        base_path.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            self._alias_file = base_path / "tool_aliases.json"
+            self._load_alias_overrides()
 
     def load_dynamic(self, module_path: str, attribute: str | None = None) -> Tool:
         """Dynamically load and register a tool from a module path.
@@ -119,6 +170,7 @@ class ToolRegistry:
                 raise
             repaired_kwargs = {k: v for k, v in normalized_kwargs.items() if k != arg}
             self._emit({"event": "tool_repair", "tool": name, "dropped_arg": arg})
+            self._record_alias_drop(name, arg)
             logger.warning("Retrying tool %s without arg '%s' after unexpected keyword error", name, arg)
             return tool.execute(**repaired_kwargs)
 
@@ -164,14 +216,14 @@ class ToolRegistry:
             return kwargs
 
         input_schema = schema.input_schema or {}
-        alias_map: Dict[str, Dict[str, str]] = {
+        alias_map: Dict[str, Dict[str, str | None]] = {
             "web_search": {
                 "num_results": "max_results",
                 "k": "max_results",
                 "limit": "max_results",
                 "top_k": "max_results",
             },
-            "microservice_builder": {"endpoints": "description"},
+            "microservice_builder": {"endpoints": "description", "name": "service_name"},
             "sandbox_exec": {
                 "cmd": "argv",
                 "command": "argv",
@@ -181,11 +233,15 @@ class ToolRegistry:
         }
         normalized: Dict[str, Any] = dict(kwargs)
 
-        for alias, target in alias_map.get(name, {}).items():
-            if alias in normalized and target not in normalized:
-                normalized[target] = normalized.pop(alias)
-            else:
-                normalized.pop(alias, None)
+        alias_rules = dict(alias_map.get(name, {}))
+        alias_rules.update(self._alias_overrides.get(name, {}))
+
+        for alias, target in alias_rules.items():
+            if alias in normalized:
+                if target and target not in normalized:
+                    normalized[target] = normalized.pop(alias)
+                else:
+                    normalized.pop(alias, None)
 
         if name == "sandbox_exec" and isinstance(normalized.get("argv"), str):
             normalized["argv"] = shlex.split(normalized["argv"])
