@@ -38,14 +38,14 @@ if not exist "%SENTINEL_PROJECT_STORAGE%" mkdir "%SENTINEL_PROJECT_STORAGE%" >nu
 >>"%LOG%" echo StorageDir:  %SENTINEL_STORAGE_DIR%
 >>"%LOG%" echo ProjectsDir: %SENTINEL_PROJECT_STORAGE%
 
-REM ---- LLM (Ollama) ----
-set "SENTINEL_LLM_BACKEND=ollama"
-set "SENTINEL_LLM_BASE_URL=http://127.0.0.1:11434/v1"
-set "SENTINEL_LLM_MODEL=qwen2.5:1.5b"
-set "SENTINEL_LLM_API_KEY=ollama"
+REM ---- LLM (OpenAI) ----
+set "SENTINEL_OPENAI_BASE_URL=https://api.openai.com/v1"
+set "SENTINEL_OPENAI_MODEL=gpt-4o"
+set "SENTINEL_OPENAI_TIMEOUT_SECS=60"
+set "SENTINEL_OPENAI_API_KEY="
 
->>"%LOG%" echo LLM_BASE_URL: %SENTINEL_LLM_BASE_URL%
->>"%LOG%" echo LLM_MODEL: %SENTINEL_LLM_MODEL%
+>>"%LOG%" echo LLM_BASE_URL: %SENTINEL_OPENAI_BASE_URL%
+>>"%LOG%" echo LLM_MODEL: %SENTINEL_OPENAI_MODEL%
 
 REM ---- Python behavior ----
 set "PYTHONUNBUFFERED=1"
@@ -83,11 +83,6 @@ if not exist "%VENV_PY%" (
   "%VENV_PY%" -m pip install -r ".\sentinel\requirements.txt" >> "%LOG%" 2>&1
   if errorlevel 1 goto :done
 )
-
-REM ---- Ollama check (fast) ----
->>"%LOG%" echo.
->>"%LOG%" echo Ollama /api/tags (3s timeout):
-curl.exe -sS --max-time 3 http://127.0.0.1:11434/api/tags >> "%LOG%" 2>&1
 
 REM ---- Git sync + proof ----
 echo Pulling latest updates from GitHub...

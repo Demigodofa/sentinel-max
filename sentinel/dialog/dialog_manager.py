@@ -13,8 +13,8 @@ class DialogManager:
     - milestones
     """
 
-    def __init__(self) -> None:
-        self._llm = LLMClient()
+    def __init__(self, llm_client: LLMClient | None = None) -> None:
+        self._llm = llm_client or LLMClient()
 
     # ------------------------------------------------------------
     # PROJECT OVERVIEW

@@ -63,6 +63,9 @@ class SentinelApp:
         self.state_panel: StatePanel | None = None
         if build_layout:
             self._build_layout()
+            self._announce_health_status()
+            self.bridge.refresh_logs()
+            self.bridge.refresh_state()
         self.root.protocol("WM_DELETE_WINDOW", self._shutdown)
 
     def _build_layout(self) -> None:
@@ -103,6 +106,11 @@ class SentinelApp:
         self.input_panel.grid(row=1, column=0, sticky="ew", pady=(self.theme["spacing"]["pad_small"], 0))
 
         self.chat.append("meta", "Sentinel MAX GUI ready. Type a message below.")
+
+    def _announce_health_status(self) -> None:
+        status = getattr(self.controller, "health_status", {}) or {}
+        message = status.get("message") or "LLM health check not available"
+        self.chat.append("meta", f"LLM health: {message}")
 
     def _handle_send(self, text: str) -> None:
         # Show user message immediately (copyable transcript)

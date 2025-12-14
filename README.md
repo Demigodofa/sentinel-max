@@ -15,6 +15,7 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 ## Runtime pipeline
 
 - **Controller orchestration**: `SentinelController` instantiates memory, world model, tool registry, sandbox variants, policy engine, planner, worker, reflection, autonomy loop, research engine, and hot reload/self-modification guardrails. Default tools are registered during initialization, so missing tool errors usually mean controller startup failed.
+- **LLM connectivity**: Sentinel now uses the OpenAI Chat Completions API exclusively (default model `gpt-4o`). A startup health check asks the model to respond with “ok” and reports the outcome to CLI stdout, the GUI meta log, and `pipeline_events` for visibility. Structured logs include `backend=openai`, `model`, `base_url`, `request_id`, and `latency_ms`.
 - **Conversation router**: `ConversationController` normalizes chat input, routes slash commands, requests confirmation when autonomy is off, and delivers accepted goals to the planner/worker/reflection loop. Slash-command flows (/auto, /tools, etc.) now retain pipeline correlation IDs so telemetry stays linked even when the intent engine is bypassed.
 - **Default tools**: Filesystem list/read/write/delete, sandboxed exec, deterministic web search, internet extractor, code analyzer, microservice builder, browser agent, and a configurable echo tool registered at startup.
 - **Direct tool execution**: `/tool <name> <json>` now runs the requested tool through the sandbox when available (with a registry fallback), so filesystem, sandbox exec, and web search tools execute for real rather than being simulated.
@@ -31,7 +32,16 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
    pip install -r sentinel/requirements.txt
    ```
 
-2. **Run the agent**
+2. **Configure OpenAI access (required)**
+
+   Set the OpenAI environment variables before launching Sentinel:
+
+   - `SENTINEL_OPENAI_API_KEY` (required)
+   - `SENTINEL_OPENAI_MODEL` (default: `gpt-4o`)
+   - `SENTINEL_OPENAI_BASE_URL` (default: `https://api.openai.com/v1`)
+   - `SENTINEL_OPENAI_TIMEOUT_SECS` (default: `60`)
+
+3. **Run the agent**
 
    CLI mode uses the shared controller and autonomy loop:
 
@@ -42,13 +52,13 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
    - `/tools` lists registered tools; `/tool <name> <json>` runs a tool through the sandbox.
    - `/auto on` enables confirmation-free autonomy for the current session.
 
-3. **Execute the full test suite**
+4. **Execute the full test suite**
 
    ```bash
    python -m pytest sentinel/tests
    ```
 
-4. **Storage defaults (F:\\Sandbox)**
+5. **Storage defaults (F:\\Sandbox)**
 
    The sandbox root defaults to `F:\\Sandbox` (configurable via `SENTINEL_SANDBOX_ROOT`), and both symbolic + vector memories now persist under `memory/` in that sandbox. Override with `SENTINEL_STORAGE_DIR` if you need a different memory location. External evidence (search queries, fetched pages, provenance metadata) is written to `memory/external_sources` alongside the stores for later retrieval; call `MemoryManager.load_external_source(<key>)` to read the persisted content and metadata in later sessions.
 

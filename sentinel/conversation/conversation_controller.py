@@ -40,6 +40,7 @@ class ConversationController:
         world_model: WorldModel,
         simulation_sandbox: Optional[SimulationSandbox] = None,
         multi_agent_engine: Optional[MultiAgentEngine] = None,
+        llm_client=None,
     ) -> None:
         self.dialog_manager = dialog_manager
         self.intent_engine = intent_engine
@@ -48,6 +49,7 @@ class ConversationController:
         self.planner = planner
         self.memory = memory
         self.world_model = world_model
+        self.llm_client = llm_client
         self.simulation_sandbox = simulation_sandbox or SimulationSandbox(self.planner.tool_registry)
         self.multi_agent_engine = multi_agent_engine or MultiAgentEngine(
             planner=self.planner,
@@ -67,10 +69,12 @@ class ConversationController:
         self.auto_deadline_epoch: float = 0.0
 
     def handle_input(self, text: str) -> Dict[str, object]:
-        logger.info("Conversation pipeline received: %s", text)
+        dto = MessageDTO.coerce(text)
+        logger.info("Conversation pipeline received: %s", dto.text)
         correlation_id = str(uuid4())
         stage_logger = PipelineStageLogger(self.memory, correlation_id)
         self.planner.policy_engine.attach_correlation_id(correlation_id)
+        payload = {"text": dto.text}
         session_context = self.dialog_manager.get_session_context()
         self.memory.store_fact(
             "goals",

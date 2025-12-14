@@ -22,6 +22,7 @@ from sentinel.config.sandbox_config import ensure_sandbox_root_exists
 from sentinel.execution.approval_gate import ApprovalGate
 from sentinel.execution.execution_controller import ExecutionController
 from sentinel.logging.logger import get_logger
+from sentinel.llm.client import LLMClient
 from sentinel.memory.intelligence import MemoryContextBuilder
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.planning.adaptive_planner import AdaptivePlanner
@@ -51,6 +52,7 @@ logger = get_logger(__name__)
 class SentinelController:
     def __init__(self) -> None:
         self.memory = MemoryManager()
+        self.llm_client = LLMClient()
         self.world_model = WorldModel(self.memory)
 
         # NOTE: DEFAULT_TOOL_REGISTRY may be a singleton; duplicate registration can happen on reload.
@@ -74,7 +76,7 @@ class SentinelController:
             simulation_sandbox=self.simulation_sandbox,
         )
 
-        self.dialog_manager = DialogManager(self.memory, self.world_model)
+        self.dialog_manager = DialogManager(self.memory, self.world_model, llm_client=self.llm_client)
         self.approval_gate = ApprovalGate(self.dialog_manager)
 
         self.intent_engine = IntentEngine(self.memory, self.world_model, self.tool_registry)
@@ -133,11 +135,33 @@ class SentinelController:
             memory=self.memory,
             world_model=self.world_model,
             simulation_sandbox=self.simulation_sandbox,
+            llm_client=self.llm_client,
         )
 
         self.patch_auditor = PatchAuditor()
         self.self_mod = SelfModificationEngine(self.patch_auditor)
         self.hot_reloader = HotReloader()
+
+        self.health_status = self._run_llm_health_check()
+
+    def _run_llm_health_check(self) -> dict[str, Any]:
+        ok, message = self.llm_client.health_check()
+        payload = {
+            "component": "llm",
+            "text": message,
+            "status": "ok" if ok else "error",
+            "backend": self.llm_client.backend,
+            "model": self.llm_client.cfg.model,
+            "base_url": self.llm_client.cfg.base_url,
+        }
+        try:
+            self.memory.store_fact("pipeline_events", key="llm_health", value=payload)
+        except Exception as exc:  # pragma: no cover - defensive store
+            logger.warning("Failed to record LLM health status: %s", exc)
+
+        log_fn = logger.info if ok else logger.error
+        log_fn("LLM startup health check: %s", message)
+        return {"ok": ok, "message": message}
 
     def _register_default_tools(self) -> None:
         """Register built-in tools once per controller instance."""

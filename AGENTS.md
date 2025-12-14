@@ -87,6 +87,7 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - Reflections include issues/suggestions/plan adjustments with confidence scores.
 
 ## CHANGELOG
+- Migrated LLM backend to OpenAI Chat Completions (`gpt-4o` default) with startup health checks recorded to logs/GUI/CLI and structured telemetry fields (`backend`, `model`, `base_url`, `request_id`, `latency_ms`). Ollama-specific settings/endpoints have been removed; configure `SENTINEL_OPENAI_API_KEY` and related vars before launch.
 - AdaptivePlanner, PolicyEngine, Memory Intelligence, and ReflectionEngine integrated across controller, planner, worker, and autonomy loop.
 - System spec updated to include policy, memory intelligence pipelines, and new namespaces.
 - Added sandbox walkthrough documentation for exercising CLI, autonomy, policy, memory, tool coverage, GUI/server expectations, and prioritized fixes.

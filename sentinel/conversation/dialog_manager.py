@@ -21,11 +21,17 @@ logger = get_logger(__name__)
 class DialogManager:
     """Stateful dialog manager with memory-backed context."""
 
-    def __init__(self, memory: MemoryManager, world_model: WorldModel, persona: str = "Professional + Concise") -> None:
+    def __init__(
+        self,
+        memory: MemoryManager,
+        world_model: WorldModel,
+        persona: str = "Professional + Concise",
+        llm_client: LLMClient | None = None,
+    ) -> None:
         self.memory = memory
         self.world_model = world_model
         self.persona = persona
-        self._llm = LLMClient()
+        self._llm = llm_client or LLMClient()
         self.last_intent: Optional[str] = None
         self.active_goals: Deque[str] = deque(maxlen=6)
         self.partial_tasks: Deque[str] = deque(maxlen=6)

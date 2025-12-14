@@ -53,7 +53,7 @@ class ChatRequest(BaseModel):  # pragma: no cover - simple data holder
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "llm": getattr(controller, "health_status", {})}
 
 
 @app.post("/chat")
