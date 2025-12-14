@@ -109,8 +109,6 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - Sandbox now restores the caller's builtins after each tool invocation to prevent lingering global mutations in tool callables.
 - Added `/toolhelp <tool>` for per-tool schema JSON and `/tools --json` for full schema dumps so CLI sessions can introspect registered tools directly.
 - Added regression coverage for tool argument normalization so alias inputs (`num_results`, `command`, `endpoints`) keep mapping to canonical schemas across web search, sandbox exec, and microservice builder flows.
-- Microservice builder now writes generated apps to `SENTINEL_PROJECT_STORAGE/<service>/app.py`, emits a matching `requirements.txt` and run command, and manages running services by port/name with `list`, `stop`, `restart`, and `logs` actions to avoid orphaned threads.
-- Tool registry persists dropped arguments from repair events into `tool_aliases.json` under the memory directory so repeated calls auto-normalize without new errors.
-- CLI `/tool` blocks now process pasted multi-line inputs sequentially instead of failing with JSON “Extra data” errors.
+- GUI plan sidebar now enforces bounded width with wrapped text so the chat log remains visible; regression coverage added for the layout constraints.
 
 

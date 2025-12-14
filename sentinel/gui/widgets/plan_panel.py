@@ -16,6 +16,8 @@ class PlanPanel(ttk.Frame):
     def __init__(self, master: tk.Misc, theme: dict | None = None) -> None:
         self.theme = theme or load_theme()
         super().__init__(master, padding=self.theme["spacing"]["pad"], style="PlanPanel.TFrame")
+        self._wraplength = 300
+        self._wrappable_labels: list[ttk.Label] = []
         self._configure_styles()
         self._build_widgets()
 
@@ -43,14 +45,14 @@ class PlanPanel(ttk.Frame):
             background=colors["panel_bg"],
             foreground=colors.get("muted_text", colors.get("muted", "#888888")),
             font=self.theme["fonts"]["body"],
-            wraplength=260,
+            wraplength=self._wraplength,
             justify="left",
         )
 
     def _build_widgets(self) -> None:
         colors = self.theme["colors"]
         self.configure(style="PlanPanel.TFrame")
-        self.canvas = tk.Canvas(self, background=colors["panel_bg"], highlightthickness=0)
+        self.canvas = tk.Canvas(self, background=colors["panel_bg"], highlightthickness=0, width=320)
         self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.inner = ttk.Frame(self.canvas, style="PlanPanel.TFrame")
 
@@ -59,21 +61,21 @@ class PlanPanel(ttk.Frame):
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
         )
 
-        window = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self._inner_window = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        self.canvas.bind(
-            "<Configure>", lambda e: self.canvas.itemconfigure(window, width=e.width)
-        )
+        self.canvas.bind("<Configure>", self._handle_canvas_configure)
 
         self.canvas.grid(row=0, column=0, sticky="nsew")
         self.scrollbar.grid(row=0, column=1, sticky="ns")
 
         self.rowconfigure(0, weight=1)
         self.columnconfigure(0, weight=1)
+        self.inner.columnconfigure(0, weight=1)
 
     def update_plan(self, steps: Iterable[PlanStep | TaskNode] | None) -> None:
         """Render plan steps or task nodes in the panel."""
 
+        self._wrappable_labels.clear()
         for child in self.inner.winfo_children():
             child.destroy()
 
@@ -83,6 +85,7 @@ class PlanPanel(ttk.Frame):
                 text="No plan available",
                 style="PlanStepBody.TLabel",
             )
+            self._register_wrappable(empty)
             empty.pack(anchor="w", padx=self.theme["spacing"]["pad"], pady=self.theme["spacing"]["pad_small"])
             return
 
@@ -94,6 +97,7 @@ class PlanPanel(ttk.Frame):
                 text=f"Step {step_id}: {step.description}",
                 style="PlanStepTitle.TLabel",
             )
+            self._register_wrappable(title)
             title.pack(anchor="w")
 
             details = []
@@ -112,6 +116,7 @@ class PlanPanel(ttk.Frame):
                     text="\n".join(details),
                     style="PlanStepBody.TLabel",
                 )
+                self._register_wrappable(body)
                 body.pack(anchor="w", pady=(self.theme["spacing"]["pad_small"], 0))
 
             frame.pack(
@@ -120,3 +125,20 @@ class PlanPanel(ttk.Frame):
                 padx=self.theme["spacing"]["pad"],
                 pady=(self.theme["spacing"]["pad_small"], self.theme["spacing"]["pad"]),
             )
+
+        self._update_wraplength(self._wraplength)
+
+    def _handle_canvas_configure(self, event: tk.Event) -> None:
+        self.canvas.itemconfigure(self._inner_window, width=event.width)
+        self._update_wraplength(max(200, event.width - 40))
+
+    def _register_wrappable(self, label: ttk.Label) -> None:
+        label.configure(wraplength=self._wraplength, justify="left", anchor="w")
+        self._wrappable_labels.append(label)
+
+    def _update_wraplength(self, wraplength: int) -> None:
+        if wraplength == self._wraplength:
+            return
+        self._wraplength = wraplength
+        for label in self._wrappable_labels:
+            label.configure(wraplength=self._wraplength, justify="left", anchor="w")

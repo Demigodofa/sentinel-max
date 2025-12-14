@@ -11,6 +11,7 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 - **Sandboxed Tooling**: Sandbox-backed tool registry plus multi-agent coordination for tool evolution; GUI and CLI both drive the same controller pipeline.
 - **Structured Pipeline Telemetry**: Each ingest → plan → policy → execute → reflect stage emits correlated records so you can trace a turn end-to-end via CLI or GUI.
 - **GUI resilience**: The chat input is pinned to the bottom and scales with the window, so resizing no longer hides or clips the entry field.
+- **Plan panel containment**: The GUI's plan sidebar wraps long text and enforces a bounded width so the chat log stays visible on typical single-monitor windows. A layout regression test guards the constraint.
 
 ## Runtime pipeline
 
