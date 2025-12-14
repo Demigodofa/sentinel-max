@@ -116,6 +116,7 @@ class PolicyEngine:
         )
 
     def _check_metadata(self, graph: TaskGraph, registry: ToolRegistry) -> None:
+        result = PolicyResult(allowed=True)
         for node in graph:
             if node.tool is None:
                 continue
