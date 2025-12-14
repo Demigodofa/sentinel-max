@@ -112,13 +112,7 @@ def test_task_request_prompts_for_execution(normalized_goal):
     multi_agent_engine.coordinate.assert_not_called()
     assert controller.pending_plan is not None
     resp = result["response"]
-assert (
-    "Execute? (y/n)" in resp
-    or "Reply **y**" in resp
-    or "/run" in resp
-)
-
-
+    assert "Execute? (y/n)" in resp
 
 def test_pending_plan_executes_on_yes(normalized_goal):
     controller, intent_engine, nl_to_taskgraph, autonomy, multi_agent_engine = build_controller(normalized_goal)
