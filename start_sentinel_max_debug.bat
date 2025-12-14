@@ -40,15 +40,14 @@ call :log SandboxRoot: %SENTINEL_SANDBOX_ROOT%
 call :log StorageDir:  %SENTINEL_STORAGE_DIR%
 call :log ProjectsDir: %SENTINEL_PROJECT_STORAGE%
 
-REM ---- LLM backend (Ollama) ----
-set "SENTINEL_LLM_BACKEND=ollama"
-set "SENTINEL_LLM_BASE_URL=http://127.0.0.1:11434/v1"
-REM Use an installed model (your tags show qwen2.5:7b exists)
-set "SENTINEL_LLM_MODEL=qwen2.5:7b"
-set "SENTINEL_LLM_API_KEY=ollama"
+REM ---- LLM backend (OpenAI) ----
+set "SENTINEL_OPENAI_BASE_URL=https://api.openai.com/v1"
+set "SENTINEL_OPENAI_MODEL=gpt-4o"
+set "SENTINEL_OPENAI_TIMEOUT_SECS=60"
+set "SENTINEL_OPENAI_API_KEY="
 
-call :log LLM_BASE_URL: %SENTINEL_LLM_BASE_URL%
-call :log LLM_MODEL: %SENTINEL_LLM_MODEL%
+call :log LLM_BASE_URL: %SENTINEL_OPENAI_BASE_URL%
+call :log LLM_MODEL: %SENTINEL_OPENAI_MODEL%
 
 REM ---- Pick Python (DO NOT depend on py launcher) ----
 set "PY_CREATE=C:\Program Files\Python312\python.exe"
@@ -91,10 +90,6 @@ set "PYTHONFAULTHANDLER=1"
 REM ---- Live tail window so you can see where it stalls ----
 echo Opening a live log tail window...
 start "Sentinel Log Tail" powershell -NoProfile -Command "Get-Content -Path '%LOG%' -Wait -Tail 120"
-
-REM ---- Quick Ollama ping ----
-call :log Ollama /api/tags (3s timeout)
-curl.exe --max-time 3 http://127.0.0.1:11434/api/tags >> "%LOG%" 2>&1
 
 REM ---- Pull latest (safe mode) ----
 call :log git pull --ff-only

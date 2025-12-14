@@ -28,6 +28,8 @@ def run_cli() -> int:
     """Start the agent in CLI mode."""
     print(f"{APP_NAME} — CLI mode\n")
     controller = SentinelController()
+    health_message = controller.health_status.get("message", "(no health status)")
+    print(f"LLM health: {health_message}\n")
 
     print("Type your commands. Type 'exit' to quit.\n")
 
