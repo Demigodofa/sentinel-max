@@ -190,7 +190,7 @@ class SentinelController:
     def process_conversation(self, message: MessageDTO | str) -> dict[str, Any]:
         dto = MessageDTO.coerce(message)
         logger.info("Processing user input: %s", dto.text)
-        return self.conversation_controller.handle_input(dto)
+        return self.conversation_controller.handle_input(dto.text)
 
     def export_state(self) -> dict[str, Any]:
         tools = {
