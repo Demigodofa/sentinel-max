@@ -66,6 +66,10 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 
    The sandbox root defaults to `F:\\Sandbox` (configurable via `SENTINEL_SANDBOX_ROOT`), and both symbolic + vector memories now persist under `memory/` in that sandbox. Override with `SENTINEL_STORAGE_DIR` if you need a different memory location. External evidence (search queries, fetched pages, provenance metadata) is written to `memory/external_sources` alongside the stores for later retrieval; call `MemoryManager.load_external_source(<key>)` to read the persisted content and metadata in later sessions.
 
+6. **Filesystem scope and common failure mode**
+
+   Filesystem tools (`fs_list`, `fs_read`, `fs_write`, `fs_delete`) are intentionally pinned to the sandbox root. Absolute paths outside `SENTINEL_SANDBOX_ROOT` (for example, `F:\`) will be rejected with `Refusing path outside sandbox` from the resolver in `filesystem_tools.py`, and the orchestrator will skip execution rather than list the whole drive. To inspect files, either point requests inside the sandbox (default `F:\\Sandbox`) or set `SENTINEL_SANDBOX_ROOT` to the desired root before launch.
+
 ## Tool summary
 
 Default tools registered at controller startup and run through the sandbox:
