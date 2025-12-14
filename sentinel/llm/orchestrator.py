@@ -126,15 +126,7 @@ class ToolCallingOrchestrator:
     def _build_tool_definitions(self) -> list[dict[str, object]]:
         definitions: list[dict[str, object]] = []
         for name, schema in self.tool_registry.describe_tools().items():
-            properties: dict[str, dict[str, object]] = {}
-            required: list[str] = []
-            for field, details in (schema.get("input_schema") or {}).items():
-                properties[field] = {
-                    "type": self._map_type(details.get("type")),
-                    "description": details.get("description", ""),
-                }
-                if details.get("required"):
-                    required.append(field)
+            properties, required = self._normalize_input_schema(schema.get("input_schema"))
             definitions.append(
                 {
                     "type": "function",
@@ -150,6 +142,44 @@ class ToolCallingOrchestrator:
                 }
             )
         return definitions
+
+    def _normalize_input_schema(
+        self, input_schema: object
+    ) -> tuple[dict[str, dict[str, object]], list[str]]:
+        properties: dict[str, dict[str, object]] = {}
+        required: list[str] = []
+
+        if not isinstance(input_schema, dict):
+            return properties, required
+
+        # Support JSON Schema-style definitions with nested properties and explicit required fields.
+        if "properties" in input_schema:
+            nested_properties = input_schema.get("properties") or {}
+            if isinstance(nested_properties, dict):
+                for field, details in nested_properties.items():
+                    if not isinstance(details, dict):
+                        continue
+                    properties[field] = {
+                        "type": self._map_type(details.get("type")),
+                        "description": details.get("description", ""),
+                    }
+            nested_required = input_schema.get("required") or []
+            if isinstance(nested_required, (list, tuple)):
+                required = [str(field) for field in nested_required]
+            return properties, required
+
+        # Default to simple field metadata map.
+        for field, details in input_schema.items():
+            if not isinstance(details, dict):
+                continue
+            properties[field] = {
+                "type": self._map_type(details.get("type")),
+                "description": details.get("description", ""),
+            }
+            if details.get("required"):
+                required.append(field)
+
+        return properties, required
 
     def _extract_direct_call(self, text: str) -> dict[str, object] | None:
         normalized = text.strip()
