@@ -188,3 +188,37 @@ class MemoryContextBuilder:
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Failed to store memory context: %s", exc)
         return [item.record for item in curated], context_block
+
+    def _tool_summary_block(self, registry: ToolRegistry) -> str:
+        try:
+            summary = registry.prompt_safe_summary()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Failed to build tool summary: %s", exc)
+            return ""
+
+        if not summary:
+            return ""
+
+        lines: List[str] = []
+        for name, schema in sorted(summary.items()):
+            inputs = schema.get("inputs", {})
+            input_parts = [
+                f"{field}:{details.get('type', 'any')}{'!' if details.get('required') else ''}"
+                for field, details in inputs.items()
+            ]
+            permissions = ",".join(schema.get("permissions", []))
+            deterministic_flag = "deterministic" if schema.get("deterministic") else "stochastic"
+            lines.append(
+                " | ".join(
+                    part
+                    for part in [
+                        name,
+                        schema.get("description", ""),
+                        deterministic_flag,
+                        f"inputs: {', '.join(input_parts)}" if input_parts else "inputs: none",
+                        f"perms: {permissions}" if permissions else "perms: none",
+                    ]
+                    if part
+                )
+            )
+        return "\n".join(lines)

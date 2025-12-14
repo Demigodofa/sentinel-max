@@ -143,6 +143,7 @@ class AdaptivePlanner:
             resources=[],
             memories=memories,
             context_block=context_block,
+            tool_gaps=[],
         )
 
     def _generate_subgoals(self, plan_context: PlanContext, reflection: Optional[Dict[str, Any]]) -> List[str]:
@@ -240,6 +241,25 @@ class AdaptivePlanner:
             )
         graph = TaskGraph(nodes, metadata=metadata)
         return graph
+
+    def _record_tool_gap(self, goal: str, subgoal: str) -> Dict[str, Any]:
+        gap_details = {
+            "type": "tool_gap",
+            "goal": goal,
+            "subgoal": subgoal,
+            "requested_tool": subgoal.replace("_", " "),
+            "reason": "No registered tool matched subgoal",
+        }
+        try:
+            self.memory.store_fact(
+                "policy_events",
+                key=None,
+                value=gap_details,
+                metadata={"goal": goal, "event": "tool_gap"},
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Failed to store tool gap policy event: %s", exc)
+        return gap_details
 
     def _score_with_simulation(self, graph: TaskGraph) -> None:
         if not self.simulation_sandbox:

@@ -141,6 +141,7 @@ print(engine.dependency_issues(project["project_id"]))
 - **Autonomy guardrails**: Time, cycle, and refinement limits enforced before each loop iteration with per-cycle metadata persisted for review. Use `/auto until done` to keep autonomy running without timing out; `/auto on|off` toggles bounded runs.
 - **Reflection**: Structured reflections stored under typed namespaces support replanning and transparency.
 - **Tool gaps**: When planning cannot map a subgoal to a registered tool, a tool-gap request is persisted to `plans` and `policy_events` so follow-up tooling can be generated with sandbox context.
+- **Tool-aware context windows**: Memory contexts now embed a concise tool registry summary so adaptive planning can ground tool selection without falling back to deterministic planning when no prior memories are available.
 
 ## Self-augmentation feedback
 
