@@ -52,7 +52,7 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
    python -m sentinel.main --mode cli
    ```
 
-   - `/tools` lists registered tools; `/tool <name> <json>` runs a tool through the sandbox.
+   - `/tools` lists registered tools; `/tools --json` dumps tool schemas; `/toolhelp <name>` shows a single schema; `/tool <name> <json>` runs a tool through the sandbox.
    - Natural requests like "list files in sandbox" or `action: fs_list {"path": "."}` trigger the OpenAI orchestrator and run the actual tools.
    - `/auto on` enables confirmation-free autonomy for the current session.
    - `/mechanic` runs a diagnostics checklist (LLM health, sandbox access, memory read/write, and unused tool report).

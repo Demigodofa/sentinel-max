@@ -346,6 +346,8 @@ class ConversationController:
                 "Commands:\n"
                 "  /help               show this help\n"
                 "  /tools              list registered tools\n"
+                "  /tools --json       dump tool schemas as JSON\n"
+                "  /toolhelp <tool>    show schema for <tool> as JSON\n"
                 "  /auto               execute the last proposed plan\n"
                 "  /auto on|off        toggle auto-execution mode\n"
                 "  /auto <turns>       enable bounded autonomy for N turns (default 1h timer)\n"
@@ -382,7 +384,47 @@ class ConversationController:
                 "dialog_context": session_context,
             }
 
-        if lower == "/tools":
+        if lower.startswith("/toolhelp"):
+            parts = text.split(maxsplit=1)
+            if len(parts) < 2:
+                response = self.dialog_manager.format_agent_response("Usage: /toolhelp <tool>")
+                self.dialog_manager.record_turn(text, response, context=session_context)
+                return {
+                    "response": response,
+                    "normalized_goal": None,
+                    "task_graph": None,
+                    "trace": None,
+                    "dialog_context": session_context,
+                }
+
+            tool_name = parts[1].strip()
+            reg = getattr(self.planner, "tool_registry", None)
+            schema = reg.get_schema(tool_name) if reg else None
+            if schema is None:
+                response = self.dialog_manager.format_agent_response(
+                    f"Tool '{tool_name}' is not registered or lacks a schema."
+                )
+                self.dialog_manager.record_turn(text, response, context=session_context)
+                return {
+                    "response": response,
+                    "normalized_goal": None,
+                    "task_graph": None,
+                    "trace": None,
+                    "dialog_context": session_context,
+                }
+
+            schema_json = json.dumps(schema.to_dict(), indent=2, sort_keys=True)
+            response = self.dialog_manager.format_agent_response(schema_json)
+            self.dialog_manager.record_turn(text, response, context=session_context)
+            return {
+                "response": response,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": schema.to_dict(),
+                "dialog_context": session_context,
+            }
+
+        if lower.startswith("/tools"):
             reg = getattr(self.planner, "tool_registry", None)
 
             def _iter_tools() -> Iterable[object]:
@@ -401,6 +443,19 @@ class ConversationController:
                     return tools_dict.values()
                 return []
 
+            if lower.strip() == "/tools --json":
+                schemas = reg.describe_tools() if reg else {}
+                schemas_json = json.dumps(schemas, indent=2, sort_keys=True)
+                response = self.dialog_manager.format_agent_response(schemas_json)
+                self.dialog_manager.record_turn(text, response, context=session_context)
+                return {
+                    "response": response,
+                    "normalized_goal": None,
+                    "task_graph": None,
+                    "trace": schemas,
+                    "dialog_context": session_context,
+                }
+
             lines = []
             for tool in _iter_tools():
                 name = getattr(tool, "name", "<unnamed>")
@@ -415,7 +470,7 @@ class ConversationController:
                 "response": response,
                 "normalized_goal": None,
                 "task_graph": None,
-                "trace": None,
+                "trace": lines or None,
                 "dialog_context": session_context,
             }
 
