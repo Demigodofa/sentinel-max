@@ -74,9 +74,10 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 
 Default tools registered at controller startup and run through the sandbox:
 
-- `web_search` (deterministic): DuckDuckGo HTML search with results logged to `memory/external_sources` for provenance.
+- `web_search` (deterministic): DuckDuckGo HTML search with a lite fallback, block-page detection, and results logged to `memory/external_sources` for provenance.
 - `internet_extract` (deterministic): Scrapes, cleans, summarizes, and stores content; evidence and cleaned HTML are persisted to `memory/external_sources` and vector memory.
 - Filesystem tools (`fs_list`, `fs_read`, `fs_write`, `fs_delete`), `sandbox_exec`, `code_analyzer`, `microservice_builder`, `browser_agent`, and the generated `echo` tool all retain the existing safety and policy checks.
+- The `echo` helper accepts `message` or `text` inputs so slash commands remain tolerant to argument name differences.
 
 ## Sandbox walkthrough
 Want to exercise every major capability in a single session? Follow [docs/sandbox_walkthrough.md](docs/sandbox_walkthrough.md) for a start-to-finish checklist that covers CLI planning/execution, autonomy gating, policy visibility, memory recall, tool coverage (including web/code/microservice/browser agents), GUI/server expectations, and prioritized follow-up fixes. The guide now includes a coverage matrix and dead-path detection tips so you can confirm conversational commands route correctly and that no part of the pipeline sits idle.

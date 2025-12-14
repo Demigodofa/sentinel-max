@@ -99,14 +99,23 @@ def generate_echo_tool(prefix: str = "", registry: ToolRegistry | None = None) -
                 name="echo",
                 version="1.0.0",
                 description="Simple echo helper",
-                input_schema={"message": {"type": "string", "required": True}},
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "message": {"type": "string"},
+                        "text": {"type": "string"},
+                    },
+                    "anyOf": [{"required": ["message"]}, {"required": ["text"]}],
+                    "additionalProperties": False,
+                },
                 output_schema={"type": "string"},
                 permissions=["compute"],
                 deterministic=True,
             )
 
-        def execute(self, message: str, **_: Any) -> str:
-            return f"{prefix}{message}"
+        def execute(self, message: Optional[str] = None, text: Optional[str] = None, **_: Any) -> str:
+            msg = message if message is not None else text
+            return f"{prefix}{msg}"
 
     tool = EchoTool()
     if registry is None:
