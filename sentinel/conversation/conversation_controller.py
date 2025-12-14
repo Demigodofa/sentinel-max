@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from typing import Dict, Optional, TYPE_CHECKING, Iterable, Tuple
@@ -70,6 +71,13 @@ class ConversationController:
         # Autonomy guardrails (user-friendly defaults)
         self.auto_budget_turns: Optional[int] = 0
         self.auto_deadline_epoch: float = 0.0
+        self.global_auto_mode: bool = os.environ.get("AUTO_MODE", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "auto",
+            "on",
+        }
 
     def handle_input(self, text: str) -> Dict[str, object]:
         dto = MessageDTO.coerce(text)
@@ -113,6 +121,22 @@ class ConversationController:
 
         if normalized_text.startswith("/tool"):
             return self._handle_direct_tool_call(text, session_context, stage_logger)
+
+        if self.orchestrator and self.orchestrator.awaiting_confirmation and self._is_orchestrator_confirmation(normalized_text):
+            orchestration_response = self.orchestrator.handle_confirmation(raw)
+            formatted = self.dialog_manager.format_agent_response(orchestration_response)
+            self.dialog_manager.record_turn(text, formatted, context=session_context)
+            return {
+                "response": formatted,
+                "normalized_goal": None,
+                "task_graph": None,
+                "trace": None,
+                "dialog_context": session_context,
+            }
+
+        if self.orchestrator and self.global_auto_mode:
+            orchestration = self._run_orchestrator(raw, session_context)
+            return orchestration
 
         if any(phrase in normalized_text for phrase in ("list tools", "what tools", "available tools")):
             tools = sorted(self.planner.tool_registry.list_tools().keys())
@@ -617,6 +641,10 @@ class ConversationController:
         ]
         return any(trigger in normalized_text for trigger in substrings)
 
+    def _is_orchestrator_confirmation(self, normalized_text: str) -> bool:
+        confirmations = {"y", "yes", "ok", "go", "run", "proceed"}
+        return normalized_text in confirmations
+
     def _is_cancel(self, normalized_text: str) -> bool:
         return normalized_text in {"n", "no", "cancel", "stop"}
 
@@ -644,6 +672,20 @@ class ConversationController:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+    def _run_orchestrator(
+        self, text: str, session_context: Dict[str, object]
+    ) -> Dict[str, object]:
+        orchestration_response = self.orchestrator.run(text, auto=True)
+        formatted = self.dialog_manager.format_agent_response(orchestration_response)
+        self.dialog_manager.record_turn(text, formatted, context=session_context)
+        return {
+            "response": formatted,
+            "normalized_goal": None,
+            "task_graph": None,
+            "trace": None,
+            "dialog_context": session_context,
+        }
+
     def _execute_with_goal(
         self,
         user_input: str,

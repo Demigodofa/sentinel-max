@@ -57,6 +57,7 @@ class ReflectionEngine:
             "reflection_type": reflection_type,
             "confidence": self._confidence(trace, issues),
             "simulation": simulation_insights,
+            "policy_outcomes": policy_outcomes,
             "correlation_id": correlation_id,
         }
         self._persist(reflection, reflection_type, correlation_id=correlation_id)

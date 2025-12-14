@@ -1,4 +1,5 @@
 from sentinel.agent_core.sandbox import Sandbox
+from sentinel.agent_core.sandbox import Sandbox
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.tools.internet_extractor import InternetExtractorTool
 from sentinel.tools.registry import ToolRegistry
@@ -18,11 +19,12 @@ def test_external_calls_sandboxed_and_logged(tmp_path, monkeypatch):
     registry = ToolRegistry()
     sandbox = Sandbox()
 
-    def fake_post(url, data, headers, timeout):
+    def fake_post(url, data=None, headers=None, timeout=None, params=None, **_):
         html = '<a class="result__a" href="https://example.com">Example Domain</a>'
         return DummyResponse(html)
 
     monkeypatch.setattr("sentinel.tools.web_search.requests.post", fake_post)
+    monkeypatch.setattr("sentinel.tools.web_search.requests.get", fake_post)
 
     web_tool = WebSearchTool(memory_manager=memory)
     registry.register(web_tool)

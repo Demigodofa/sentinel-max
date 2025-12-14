@@ -23,7 +23,7 @@ from sentinel.execution.approval_gate import ApprovalGate
 from sentinel.execution.execution_controller import ExecutionController
 from sentinel.logging.logger import get_logger
 from sentinel.llm.client import LLMClient
-from sentinel.llm.orchestrator import ToolCallingOrchestrator
+from sentinel.orchestration import Orchestrator, configure_plan_memory
 from sentinel.memory.intelligence import MemoryContextBuilder
 from sentinel.memory.memory_manager import MemoryManager
 from sentinel.planning.adaptive_planner import AdaptivePlanner
@@ -55,6 +55,7 @@ class SentinelController:
         self.memory = MemoryManager()
         self.llm_client = LLMClient()
         self.world_model = WorldModel(self.memory)
+        configure_plan_memory(self.memory)
 
         # NOTE: DEFAULT_TOOL_REGISTRY may be a singleton; duplicate registration can happen on reload.
         self.tool_registry = DEFAULT_TOOL_REGISTRY
@@ -117,19 +118,19 @@ class SentinelController:
             self.memory,
         )
 
-        self.tool_orchestrator = ToolCallingOrchestrator(
-            self.llm_client,
-            self.tool_registry,
-            self.sandbox,
-            memory=self.memory,
-        )
-
         self.reflection_engine = ReflectionEngine(
             self.memory,
             policy_engine=self.policy_engine,
             memory_context_builder=self.memory_context_builder,
         )
         self.reflector = Reflector(self.memory, self.reflection_engine)
+
+        self.tool_orchestrator = Orchestrator(
+            self.llm_client,
+            self.tool_registry,
+            self.memory,
+            reflection_engine=self.reflection_engine,
+        )
 
         self.autonomy = AutonomyLoop(
             self.planner,
