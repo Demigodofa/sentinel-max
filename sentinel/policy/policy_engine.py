@@ -105,15 +105,43 @@ class PolicyEngine:
     # ------------------------------------------------------------------
     # Plan-time policies
     # ------------------------------------------------------------------
-    def evaluate_plan(self, graph: "TaskGraph", registry: ToolRegistry) -> None:
-        self._check_metadata(graph, registry)
-        self._enforce_parallel_limit(graph)
-        self._check_artifacts(graph)
-        self._record_event(
-            "allow",
-            "Plan validated",
-            {"nodes": len(list(graph)), "parallel_limit": self.parallel_limit},
-        )
+    def evaluate_plan(
+        self, graph: "TaskGraph", registry: ToolRegistry, enforce: bool = True
+    ) -> PolicyResult:
+        """
+        Validate a task graph against policy rules.
+
+        When ``enforce`` is True (default), a ``PermissionError`` is raised if the
+        plan violates policy. Callers can set ``enforce=False`` to receive a
+        ``PolicyResult`` while allowing the program to continue (useful for
+        testing or advisory-only flows).
+        """
+
+        checks: list[PolicyResult] = [
+            self._check_metadata(graph, registry),
+            self._enforce_parallel_limit(graph),
+            self._check_artifacts(graph),
+        ]
+
+        result = PolicyResult(allowed=True)
+        for check in checks:
+            result = result.merge(check)
+
+        event_type = "allow" if result.allowed else "block"
+        payload: Dict[str, Any] = {
+            "nodes": len(list(graph)),
+            "parallel_limit": self.parallel_limit,
+        }
+        if result.reasons:
+            payload["reasons"] = result.reasons
+        if result.rewrites:
+            payload["rewrites"] = result.rewrites
+        self._record_event(event_type, "Plan validated", payload)
+
+        if enforce and not result.allowed:
+            raise PermissionError("; ".join(result.reasons))
+
+        return result
 
     def _check_metadata(self, graph: TaskGraph, registry: ToolRegistry) -> None:
         result = PolicyResult(allowed=True)

@@ -9,7 +9,7 @@ def get_sandbox_root() -> Path:
     Hard-root for ALL file operations.
     Must be an absolute path.
     """
-    raw = os.getenv("SENTINEL_SANDBOX_ROOT", r"F:\\Sandbox")
+    raw = os.getenv("SENTINEL_SANDBOX_ROOT", r"F:\\")
     root = Path(raw).expanduser()
     if not root.is_absolute():
         # force absolute to avoid surprises
