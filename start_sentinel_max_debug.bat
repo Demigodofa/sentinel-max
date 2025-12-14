@@ -40,14 +40,17 @@ call :log SandboxRoot: %SENTINEL_SANDBOX_ROOT%
 call :log StorageDir:  %SENTINEL_STORAGE_DIR%
 call :log ProjectsDir: %SENTINEL_PROJECT_STORAGE%
 
-REM ---- LLM backend (OpenAI) ----
-set "SENTINEL_OPENAI_BASE_URL=https://api.openai.com/v1"
-set "SENTINEL_OPENAI_MODEL=gpt-4o"
-set "SENTINEL_OPENAI_TIMEOUT_SECS=60"
-set "SENTINEL_OPENAI_API_KEY="
+REM ---- LLM backend (OpenAI default, Ollama optional) ----
+set "SENTINEL_LLM_BACKEND=openai"
+set "SENTINEL_LLM_BASE_URL=https://api.openai.com/v1"
+set "SENTINEL_LLM_MODEL=gpt-4o"
+set "SENTINEL_LLM_WORKER_MODEL="
+set "SENTINEL_LLM_TIMEOUT_SECS=60"
+set "OPENAI_API_KEY="
 
-call :log LLM_BASE_URL: %SENTINEL_OPENAI_BASE_URL%
-call :log LLM_MODEL: %SENTINEL_OPENAI_MODEL%
+call :log LLM_BACKEND: %SENTINEL_LLM_BACKEND%
+call :log LLM_BASE_URL: %SENTINEL_LLM_BASE_URL%
+call :log LLM_MODEL: %SENTINEL_LLM_MODEL%
 
 REM ---- Pick Python (DO NOT depend on py launcher) ----
 set "PY_CREATE=C:\Program Files\Python312\python.exe"

@@ -99,5 +99,8 @@ This document is the living system specification for Sentinel MAX. It summarizes
 - Structured pipeline logs now carry correlation IDs across ingest → plan → policy → execute → reflect; view them via `/state` in the CLI or the GUI pipeline state panel (fed by `plans`, `execution*`, `reflection.*`, `policy_events`, and `pipeline_events`).
 - GUI layout uses a grid to keep the chat input pinned to the bottom during window resize.
 - Memory context builder now includes a tool registry summary so adaptive planning keeps tool awareness even when no memories are available.
+- Added OpenAI tool-calling orchestrator (default backend) with Ollama fallback, hard guardrails against claiming execution without tool output, and natural-language routing for tool invocations.
+- Updated Windows launchers and LLM config env vars (`SENTINEL_LLM_*`, `OPENAI_API_KEY`, optional worker model) to match the orchestrator backend selection.
+- Introduced `/mechanic` diagnostics to verify tool registry health, sandbox access, LLM connectivity, memory read/write, and report unused tools.
 
 

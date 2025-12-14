@@ -36,7 +36,7 @@ def test_llm_client_returns_error_message(monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
 
-    cfg = LLMConfig(base_url="https://api.openai.com/v1", api_key="token", model="test-model")
+    cfg = LLMConfig(backend="openai", base_url="https://api.openai.com/v1", api_key="token", model="test-model")
     client = LLMClient(cfg)
     reply = client.chat([ChatMessage("user", "hello")])
 
@@ -45,7 +45,7 @@ def test_llm_client_returns_error_message(monkeypatch):
 
 
 def test_health_check_missing_api_key():
-    cfg = LLMConfig(base_url="https://api.openai.com/v1", api_key=None, model="gpt-4o")
+    cfg = LLMConfig(backend="openai", base_url="https://api.openai.com/v1", api_key=None, model="gpt-4o")
     client = LLMClient(cfg)
 
     ok, message = client.health_check()
@@ -65,7 +65,7 @@ def test_chat_uses_openai_headers(monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
 
-    cfg = LLMConfig(base_url="https://api.openai.com/v1", api_key="secret", model="gpt-4o")
+    cfg = LLMConfig(backend="openai", base_url="https://api.openai.com/v1", api_key="secret", model="gpt-4o")
     client = LLMClient(cfg)
 
     reply = client.chat([ChatMessage("user", "ping")], max_tokens=5)
