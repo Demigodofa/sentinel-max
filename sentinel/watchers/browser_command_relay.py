@@ -41,51 +41,30 @@ def _default_profile_dir() -> str:
     return str(Path.cwd() / "sentinel-data" / "chrome-profile")
 
 
-def create_chrome_driver(
-    *,
-    headless: bool = False,
-    profile_dir: Optional[str] = None,
-    profile_name: Optional[str] = None,
-    chrome_binary: Optional[str] = None,
-) -> webdriver.Chrome:
-    """Return a configured Chrome driver.
-
-    Notes:
-    - With modern Selenium (4.6+), Selenium Manager can auto-fetch the right driver.
-      That means you typically do NOT need chromedriver on PATH.
-    - We use a dedicated user-data-dir so you can log into ChatGPT once and persist the session.
+def create_chrome_driver(*, headless: bool = False) -> webdriver.Chrome:
     """
+    Launch Chrome for the relay using a portable user profile (so you log in once).
+    Uses Selenium Manager automatically; chromedriver on PATH is optional.
+    """
+
+    profile_dir = os.environ.get("SENTINEL_RELAY_PROFILE_DIR", "").strip()
+
     options = Options()
-
-    # Optional: specify Chrome binary explicitly (rarely needed on Windows)
-    if chrome_binary:
-        options.binary_location = chrome_binary
-
-    # Headless mode is possible, but ChatGPT often needs an interactive login.
     if headless:
         options.add_argument("--headless=new")
 
-    # Stability / compatibility flags
+    # Stable defaults
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--start-maximized")
 
-    # Use a dedicated profile dir (portable)
-    prof = profile_dir or _default_profile_dir()
-    Path(prof).mkdir(parents=True, exist_ok=True)
-    options.add_argument(f"--user-data-dir={prof}")
-
-    # If you want a named profile inside that user-data-dir, you can set it (optional).
-    # Usually unnecessary unless you’re juggling multiple profiles in the same dir.
-    if profile_name:
-        options.add_argument(f'--profile-directory={profile_name}')
-
-    # Reduce “automation detected” UI noise (doesn't magically bypass anything; just cleaner)
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option("useAutomationExtension", False)
+    # Portable login profile (the important part)
+    if profile_dir:
+        options.add_argument(f"--user-data-dir={profile_dir}")
+        options.add_argument("--profile-directory=Default")
 
     return webdriver.Chrome(options=options)
+)
 
 
 @dataclass(slots=True)
