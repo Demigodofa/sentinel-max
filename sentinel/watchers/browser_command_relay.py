@@ -61,7 +61,25 @@ class ChatGPTBrowserRelay:
         self._driver: webdriver.Chrome | None = None
 
     def run(self) -> None:
-        self._driver = self.driver_factory()
+        try:
+            self._driver = self.driver_factory()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "Failed to create Chrome driver for browser relay: %s", exc
+            )
+            self.logger.error(
+                "Ensure chromedriver is installed and discoverable on PATH before enabling the ChatGPT relay."
+            )
+            return
+
+        self.logger.info(
+            "Starting ChatGPT browser relay: url=%s selector=%s poll=%.2fs headless=%s",
+            self.config.chatgpt_url,
+            self.config.assistant_selector,
+            self.config.poll_interval_seconds,
+            self.config.headless,
+        )
+
         self._driver.get(self.config.chatgpt_url)
 
         while not self._stop_event.is_set():
