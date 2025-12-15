@@ -13,7 +13,7 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 - **GUI resilience**: The chat input is pinned to the bottom and scales with the window, so resizing no longer hides or clips the entry field.
 - **Plan panel containment**: The GUI's plan sidebar wraps long text and enforces a bounded width so the chat log stays visible on typical single-monitor windows. A layout regression test guards the constraint.
 - **Autonomous orchestration**: Natural requests now route through an OpenAI-style tool-calling orchestrator that publishes live plan steps to memory, updates statuses as tools run, and pauses for confirmation on destructive actions before resuming.
-- **ChatGPT browser relay**: Selenium opens a ChatGPT Chrome window (or attaches to an existing debug port), confirms the page is ready, and forwards `<START>...<STOP>` blocks into the GUI queue exactly as if you typed and pressed **Enter**. The Windows launcher starts this by default when `START_BROWSER_RELAY` normalizes to `1`/`true`/`yes`/`on`, logs the normalized flag plus the detected `chromedriver` path, and skips the relay with a warning when a driver is missing instead of failing silently.
+- **ChatGPT browser relay**: Selenium opens a ChatGPT Chrome window (or attaches to an existing debug port), confirms the page is ready, and forwards `<START>...<STOP>` blocks into the GUI queue exactly as if you typed and pressed **Enter**. The Windows launcher starts this by default when `START_BROWSER_RELAY` normalizes to `1`/`true`/`yes`/`on`, logs the normalized flag plus the detected `chromedriver` path, and falls back to Selenium Manager to download a driver when one is not on `PATH` (with a clear warning) instead of silently skipping the relay.
 
 ## Runtime pipeline
 
@@ -82,7 +82,7 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
    python scripts/browser_chatgpt_relay.py --chatgpt-url "https://chat.openai.com/" --poll-seconds 1.5
    ```
 
-   The Selenium relay now verifies the ChatGPT page loads before polling and logs clear errors when navigation fails so you can diagnose a collapsing Chrome window. On Windows, the launcher starts this listener in a separate window by default when `START_BROWSER_RELAY` is truthy, prints the normalized flag and detected `chromedriver` path (or a not-found warning), and skips the relay gracefully when no driver is available. Relay output is written to `logs/launcher_last.log` alongside the main Sentinel process output.
+   The Selenium relay now verifies the ChatGPT page loads before polling and logs clear errors when navigation fails so you can diagnose a collapsing Chrome window. On Windows, the launcher starts this listener in a separate window by default when `START_BROWSER_RELAY` is truthy, prints the normalized flag and detected `chromedriver` path (or a not-found warning), and falls back to Selenium Manager to resolve the driver when none is on `PATH` instead of skipping the relay outright. Relay output is written to `logs/launcher_last.log` alongside the main Sentinel process output.
 
    See [docs/browser_chatgpt_relay.md](docs/browser_chatgpt_relay.md) for the setup checklist, the ChatGPT prompt to paste, and troubleshooting tips.
 

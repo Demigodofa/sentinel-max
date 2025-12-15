@@ -18,7 +18,7 @@ Use the browser relay when you want a ChatGPT tab to drive Sentinel through the 
    pip install -r sentinel/requirements.txt
    ```
 
-2. Ensure Chrome/Chromium and a matching `chromedriver` are on your `PATH`.
+2. Ensure Chrome/Chromium is installed. A matching `chromedriver` on your `PATH` is preferred, but Selenium Manager can download a compatible driver automatically if it is missing (requires internet access).
 3. Sign in to ChatGPT in the profile that the launched browser will use (headless mode expects an existing session).
 4. Export your Sentinel LLM environment variables (for example `OPENAI_API_KEY`, `SENTINEL_LLM_MODEL`) before launching the GUI.
 
@@ -71,5 +71,5 @@ File layout hints for grounding:
 ## Troubleshooting
 
 - If no commands arrive, confirm you see `<START>` and `<STOP>` in the ChatGPT assistant reply and that the CSS selector still matches assistant messages.
-- Selenium requires a compatible `chromedriver`; run `chromedriver --version` to confirm.
+- If Selenium Manager cannot download a driver (network blocked) or you want to avoid the download each time, install a compatible `chromedriver` and ensure `chromedriver --version` works on your `PATH`.
 - Headless mode relies on existing auth cookies. If ChatGPT responds with a login prompt, run without `--headless` and sign in once.

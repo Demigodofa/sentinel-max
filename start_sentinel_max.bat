@@ -59,9 +59,9 @@ if /I "%START_BROWSER_RELAY%"=="on" set "START_BROWSER_RELAY_NORMALIZED=1"
 echo ChatGPT relay flag: %START_BROWSER_RELAY%  ^(normalized: %START_BROWSER_RELAY_NORMALIZED%^) 
 >>"%LOG%" echo ChatGPT relay flag: %START_BROWSER_RELAY% ^(normalized: %START_BROWSER_RELAY_NORMALIZED%^)
 
-REM ---- Chromedriver check ----
+REM ---- Chromedriver check (Selenium Manager fallback allowed) ----
 set "CHROMEDRIVER_FOUND=0"
-set "CHROMEDRIVER_MSG=chromedriver not found on PATH"
+set "CHROMEDRIVER_MSG=chromedriver not found on PATH; Selenium Manager will try to fetch a driver dynamically"
 where chromedriver >nul 2>&1 && (
   set "CHROMEDRIVER_FOUND=1"
   for /f "usebackq delims=" %%C in (`where chromedriver`) do set "CHROMEDRIVER_MSG=chromedriver: %%C"
@@ -127,23 +127,24 @@ start "Sentinel Log Tail" powershell -NoProfile -Command "Get-Content -Path '%LO
 REM ---- ChatGPT browser relay listener ----
 if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" (
   if "%CHROMEDRIVER_FOUND%"=="0" (
-    echo WARNING: chromedriver not found on PATH; skipping ChatGPT browser relay.
-    echo   Install chromedriver and keep it on PATH, then rerun with START_BROWSER_RELAY=1.
-    >>"%LOG%" echo WARNING: chromedriver missing; relay launch skipped.
+    echo WARNING: chromedriver not found on PATH; relying on Selenium Manager to fetch a compatible driver. Ensure Chrome is installed and internet access is available.
+    >>"%LOG%" echo WARNING: chromedriver missing; using Selenium Manager fallback for relay startup.
   ) else (
-    echo Starting ChatGPT browser relay listener (Selenium Chrome window should appear)...
     echo %CHROMEDRIVER_MSG%
-    >>"%LOG%" echo Starting ChatGPT browser relay listener...
     >>"%LOG%" echo %CHROMEDRIVER_MSG%
-    >>"%LOG%" echo Expecting chromedriver on PATH; relay opens a ChatGPT tab and polls for <START>/<STOP> blocks.
-    start "Sentinel Browser Relay" cmd /k "echo ChatGPT relay log: %LOG% & echo %CHROMEDRIVER_MSG% & \"%VENV_PY%\" -u -X faulthandler scripts\\browser_chatgpt_relay.py >> \"%LOG%\" 2>&1"
-    if errorlevel 1 (
-      echo WARNING: Failed to launch ChatGPT browser relay. See log for details.
-      >>"%LOG%" echo WARNING: Failed to launch ChatGPT browser relay.
-    ) else (
-      echo ChatGPT browser relay requested; a Chrome window should open. If it does not, open %LOG% and search for "selenium" or "chromedriver" errors.
-      >>"%LOG%" echo ChatGPT browser relay process launched.
-    )
+  )
+
+  echo Starting ChatGPT browser relay listener (Selenium Chrome window should appear)...
+  >>"%LOG%" echo Starting ChatGPT browser relay listener...
+  >>"%LOG%" echo %CHROMEDRIVER_MSG%
+  if "%CHROMEDRIVER_FOUND%"=="0" >>"%LOG%" echo Using Selenium Manager fallback to resolve driver.
+  start "Sentinel Browser Relay" cmd /k "echo ChatGPT relay log: %LOG% & echo %CHROMEDRIVER_MSG% & \"%VENV_PY%\" -u -X faulthandler scripts\\browser_chatgpt_relay.py >> \"%LOG%\" 2>&1"
+  if errorlevel 1 (
+    echo WARNING: Failed to launch ChatGPT browser relay. See log for details.
+    >>"%LOG%" echo WARNING: Failed to launch ChatGPT browser relay.
+  ) else (
+    echo ChatGPT browser relay requested; a Chrome window should open. If it does not, open %LOG% and search for "selenium" or "chromedriver" errors.
+    >>"%LOG%" echo ChatGPT browser relay process launched.
   )
 ) else (
   echo ChatGPT browser relay disabled by START_BROWSER_RELAY=%START_BROWSER_RELAY%.
