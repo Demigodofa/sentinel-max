@@ -13,8 +13,7 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 - **GUI resilience**: The chat input is pinned to the bottom and scales with the window, so resizing no longer hides or clips the entry field.
 - **Plan panel containment**: The GUI's plan sidebar wraps long text and enforces a bounded width so the chat log stays visible on typical single-monitor windows. A layout regression test guards the constraint.
 - **Autonomous orchestration**: Natural requests now route through an OpenAI-style tool-calling orchestrator that publishes live plan steps to memory, updates statuses as tools run, and pauses for confirmation on destructive actions before resuming.
-- **ChatGPT browser relay**: Optional watcher pipes `<START>...<STOP>` command blocks from a ChatGPT browser tab straight into the GUI input so remote copilots can drive Sentinel without touching the CLI. The Windows launcher starts this Selenium-powered Chrome session by default when `START_BROWSER_RELAY` is set to `1`/`true`/`yes`/`on`; set it to `0` to skip. The launcher now echoes the normalized flag and whether `chromedriver` was discovered on `PATH` so you can immediately see why the relay did (or did not) start.
-- **ChatGPT browser relay**: Optional watcher pipes `<START>...<STOP>` command blocks from a ChatGPT browser tab straight into the GUI input so remote copilots can drive Sentinel without touching the CLI. The Windows launcher starts this Selenium-powered Chrome session by default when `START_BROWSER_RELAY` is set to `1`/`true`/`yes`/`on`; set it to `0` to skip. The launcher now echoes the normalized flag and whether `chromedriver` was discovered on `PATH` so you can immediately see why the relay did (or did not) start. If `chromedriver` is missing, the launcher warns and skips the relay instead of failing silently.
+- **ChatGPT browser relay**: Selenium opens a ChatGPT Chrome window (or attaches to an existing debug port), confirms the page is ready, and forwards `<START>...<STOP>` blocks into the GUI queue exactly as if you typed and pressed **Enter**. The Windows launcher starts this by default when `START_BROWSER_RELAY` normalizes to `1`/`true`/`yes`/`on`, logs the normalized flag plus the detected `chromedriver` path, and skips the relay with a warning when a driver is missing instead of failing silently.
 
 ## Runtime pipeline
 
@@ -77,27 +76,13 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 
 7. **Run the ChatGPT browser relay (optional)**
 
-   Spin up the GUI with a watcher that listens for `<START> ... <STOP>` blocks in a ChatGPT tab and injects them as GUI input:
+   Spin up the GUI with a watcher that listens for `<START> ... <STOP>` blocks in a ChatGPT tab and injects them as GUI input (the GUI receives the text the same way as pressing **Enter**):
 
    ```bash
    python scripts/browser_chatgpt_relay.py --chatgpt-url "https://chat.openai.com/" --poll-seconds 1.5
    ```
 
-   On Windows, the launcher now refuses to start the relay if `chromedriver` is not found on `PATH` and logs a warning with the remediation. The relay process also logs a clear error when driver creation fails (for example, if a matching Chrome/Chromedriver pair is not installed) so you can diagnose missing browser dependencies instead of wondering why no window appeared.
-
-   The Windows launcher (`start_sentinel_max.bat`) now starts this Selenium listener in a separate window by default (Chrome window appears if `chromedriver` is on PATH); set `START_BROWSER_RELAY=0` in the script if you want to disable it. The launcher logs relay startup to `logs/launcher_last.log` alongside the main Sentinel process output.
-
-   Filesystem tools (`fs_list`, `fs_read`, `fs_write`, `fs_delete`) are pinned to `SENTINEL_SANDBOX_ROOT`. With the default root set to the entire `F:\\` drive, absolute paths anywhere on that drive are allowed. Attempts to reach outside the sandbox (for example, another drive letter) will be rejected with `Refusing path outside sandbox` from the resolver in `filesystem_tools.py`, and the orchestrator will skip execution. To narrow or relocate the sandbox, override `SENTINEL_SANDBOX_ROOT` before launch.
-
-7. **Run the ChatGPT browser relay (optional)**
-
-   Spin up the GUI with a watcher that listens for `<START> ... <STOP>` blocks in a ChatGPT tab and injects them as GUI input:
-
-   ```bash
-   python scripts/browser_chatgpt_relay.py --chatgpt-url "https://chat.openai.com/" --poll-seconds 1.5
-   ```
-
-   The Windows launcher (`start_sentinel_max.bat`) now starts this Selenium listener in a separate window by default (Chrome window appears if `chromedriver` is on PATH); set `START_BROWSER_RELAY=0` in the script if you want to disable it. At startup it prints the normalized flag and whether `chromedriver` was found (or not) on `PATH`, and it logs relay startup to `logs/launcher_last.log` alongside the main Sentinel process output.
+   The Selenium relay now verifies the ChatGPT page loads before polling and logs clear errors when navigation fails so you can diagnose a collapsing Chrome window. On Windows, the launcher starts this listener in a separate window by default when `START_BROWSER_RELAY` is truthy, prints the normalized flag and detected `chromedriver` path (or a not-found warning), and skips the relay gracefully when no driver is available. Relay output is written to `logs/launcher_last.log` alongside the main Sentinel process output.
 
    See [docs/browser_chatgpt_relay.md](docs/browser_chatgpt_relay.md) for the setup checklist, the ChatGPT prompt to paste, and troubleshooting tips.
 

@@ -113,12 +113,9 @@ class ChatGPTBrowserRelay:
             self.config.attach_debug_port,
         )
 
-        # In attach mode, driver is already pointing at an existing Chrome session;
-        # we still navigate to ChatGPT to make sure the tab exists.
-        try:
-            self._driver.get(self.config.chatgpt_url)
-        except WebDriverException as exc:
-            self.logger.error("Navigation to chatgpt_url failed: %s", exc)
+        if not self._ensure_chatgpt_tab():
+            self._shutdown_driver()
+            return
 
         while not self._stop_event.is_set():
             try:
@@ -157,8 +154,7 @@ class ChatGPTBrowserRelay:
             if signature in self._seen_signatures:
                 continue
             self._seen_signatures.add(signature)
-            self.logger.info("Forwarding ChatGPT command: %s", command.strip())
-            self.command_queue.put(command.strip())
+            self._forward_command(command)
 
     def _extract_commands(self, elements: Iterable) -> List[str]:
         commands: List[str] = []
@@ -185,3 +181,28 @@ class ChatGPTBrowserRelay:
 
     def _signature(self, command: str) -> str:
         return hashlib.sha256(command.encode("utf-8")).hexdigest()
+
+    def _ensure_chatgpt_tab(self) -> bool:
+        if not self._driver:
+            return False
+
+        try:
+            self._driver.get(self.config.chatgpt_url)
+        except WebDriverException as exc:
+            self.logger.error("Navigation to chatgpt_url failed: %s", exc)
+            return False
+
+        try:
+            self._driver.find_element(By.TAG_NAME, "body")
+            self.logger.info("ChatGPT tab ready; watching for wrapped commands.")
+            return True
+        except WebDriverException as exc:
+            self.logger.error("ChatGPT page did not finish loading: %s", exc)
+            return False
+
+    def _forward_command(self, command: str) -> None:
+        cleaned = command.strip()
+        if not cleaned:
+            return
+        self.logger.info("Forwarding ChatGPT command into GUI: %s", cleaned)
+        self.command_queue.put(cleaned)
