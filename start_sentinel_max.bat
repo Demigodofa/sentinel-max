@@ -50,6 +50,10 @@ set "OPENAI_API_KEY="
 >>"%LOG%" echo LLM_BASE_URL: %SENTINEL_LLM_BASE_URL%
 >>"%LOG%" echo LLM_MODEL: %SENTINEL_LLM_MODEL%
 
+REM ---- Listener toggle ----
+set "START_BROWSER_RELAY=1"
+>>"%LOG%" echo ChatGPT relay enabled: %START_BROWSER_RELAY%
+
 REM ---- Python behavior ----
 set "PYTHONUNBUFFERED=1"
 set "PYTHONFAULTHANDLER=1"
@@ -105,6 +109,23 @@ git status -sb >> "%LOG%" 2>&1
 
 REM ---- Live tail window so you SEE logs while running ----
 start "Sentinel Log Tail" powershell -NoProfile -Command "Get-Content -Path '%LOG%' -Wait -Tail 120"
+
+REM ---- ChatGPT browser relay listener ----
+if /I "%START_BROWSER_RELAY%"=="1" (
+  echo Starting ChatGPT browser relay listener...
+  >>"%LOG%" echo Starting ChatGPT browser relay listener...
+  start "Sentinel Browser Relay" cmd /c "\"%VENV_PY%\" -u -X faulthandler scripts\\browser_chatgpt_relay.py >> \"%LOG%\" 2>&1"
+  if errorlevel 1 (
+    echo WARNING: Failed to launch ChatGPT browser relay. See log for details.
+    >>"%LOG%" echo WARNING: Failed to launch ChatGPT browser relay.
+  ) else (
+    echo ChatGPT browser relay running in its own window.
+    >>"%LOG%" echo ChatGPT browser relay running.
+  )
+) else (
+  echo ChatGPT browser relay disabled by START_BROWSER_RELAY=%START_BROWSER_RELAY%.
+  >>"%LOG%" echo ChatGPT browser relay disabled.
+)
 
 REM ---- Launch ----
 set "MODE=gui"

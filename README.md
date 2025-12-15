@@ -82,6 +82,8 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
    python scripts/browser_chatgpt_relay.py --chatgpt-url "https://chat.openai.com/" --poll-seconds 1.5
    ```
 
+   The Windows launcher (`start_sentinel_max.bat`) now starts this listener in a separate window by default; set `START_BROWSER_RELAY=0` in the script if you want to disable it. The launcher logs relay startup to `logs/launcher_last.log` alongside the main Sentinel process output.
+
    See [docs/browser_chatgpt_relay.md](docs/browser_chatgpt_relay.md) for the setup checklist, the ChatGPT prompt to paste, and troubleshooting tips.
 
 ## Tool summary
