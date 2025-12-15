@@ -82,6 +82,18 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
    python scripts/browser_chatgpt_relay.py --chatgpt-url "https://chat.openai.com/" --poll-seconds 1.5
    ```
 
+   The Windows launcher (`start_sentinel_max.bat`) now starts this Selenium listener in a separate window by default (Chrome window appears if `chromedriver` is on PATH); set `START_BROWSER_RELAY=0` in the script if you want to disable it. The launcher logs relay startup to `logs/launcher_last.log` alongside the main Sentinel process output.
+
+   Filesystem tools (`fs_list`, `fs_read`, `fs_write`, `fs_delete`) are pinned to `SENTINEL_SANDBOX_ROOT`. With the default root set to the entire `F:\\` drive, absolute paths anywhere on that drive are allowed. Attempts to reach outside the sandbox (for example, another drive letter) will be rejected with `Refusing path outside sandbox` from the resolver in `filesystem_tools.py`, and the orchestrator will skip execution. To narrow or relocate the sandbox, override `SENTINEL_SANDBOX_ROOT` before launch.
+
+7. **Run the ChatGPT browser relay (optional)**
+
+   Spin up the GUI with a watcher that listens for `<START> ... <STOP>` blocks in a ChatGPT tab and injects them as GUI input:
+
+   ```bash
+   python scripts/browser_chatgpt_relay.py --chatgpt-url "https://chat.openai.com/" --poll-seconds 1.5
+   ```
+
    The Windows launcher (`start_sentinel_max.bat`) now starts this Selenium listener in a separate window by default (Chrome window appears if `chromedriver` is on PATH); set `START_BROWSER_RELAY=0` in the script if you want to disable it. At startup it prints the normalized flag and whether `chromedriver` was found (or not) on `PATH`, and it logs relay startup to `logs/launcher_last.log` alongside the main Sentinel process output.
 
    See [docs/browser_chatgpt_relay.md](docs/browser_chatgpt_relay.md) for the setup checklist, the ChatGPT prompt to paste, and troubleshooting tips.
