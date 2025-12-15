@@ -17,9 +17,19 @@ from sentinel.gui.widgets.log_panel import LogPanel
 from sentinel.gui.widgets.state_panel import StatePanel
 
 
+class GUIStartupError(RuntimeError):
+    """Raised when the GUI cannot start (e.g., missing display or Tk)."""
+
+
 def run_gui_app() -> None:
     theme = load_theme()
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:  # pragma: no cover - OS/window manager specific
+        raise GUIStartupError(
+            "Unable to start the GUI. Ensure a display is available (set DISPLAY on Linux) "
+            "and that Tk is installed."
+        ) from exc
     root.title("Sentinel MAX")
 
     # On Windows, force a reliable theme to avoid invisible entry text when ttk styles misbehave.
@@ -43,7 +53,13 @@ def run_gui_app_with_queue(command_queue: queue.Queue[str]) -> None:
     """Launch the GUI with an injected command queue for automation relays."""
 
     theme = load_theme()
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:  # pragma: no cover - OS/window manager specific
+        raise GUIStartupError(
+            "Unable to start the GUI. Ensure a display is available (set DISPLAY on Linux) "
+            "and that Tk is installed."
+        ) from exc
     root.title("Sentinel MAX")
 
     style = ttk.Style(root)
