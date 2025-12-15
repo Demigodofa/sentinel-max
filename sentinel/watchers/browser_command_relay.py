@@ -1,10 +1,12 @@
 """Browser watcher that relays ChatGPT commands into the Sentinel GUI."""
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from queue import Queue
 from typing import Callable, Iterable, List, Optional
 
@@ -13,38 +15,54 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
 
+def _norm_path(p: str | Path | None) -> str | None:
+    if not p:
+        return None
+    return str(Path(p).expanduser().resolve())
+
+
 def create_chrome_driver(
     *,
     headless: bool = False,
-    profile_dir: Optional[str] = None,
-    chrome_binary: Optional[str] = None,
+    profile_dir: str | Path | None = None,
+    chrome_binary: str | None = None,
+    attach_debug_port: int | None = None,
 ) -> webdriver.Chrome:
     """
-    Create a Chrome driver configured for interactive use with an existing profile.
+    Create a Chrome WebDriver.
 
-    Notes:
-    - DO NOT have normal Chrome running with the same --user-data-dir when starting this.
-    - We intentionally rely on Selenium Manager (no hard chromedriver PATH requirement).
+    - If attach_debug_port is set, Selenium attaches to an already-running Chrome started with:
+        chrome.exe --remote-debugging-port=9222 --user-data-dir=...
+    - Otherwise Selenium launches Chrome itself.
+
+    NOTE: chromedriver does NOT need to be on PATH if you're on Selenium 4.6+ (Selenium Manager),
+    but having it pinned can remove ambiguity.
     """
     options = Options()
 
-    # If you want to force a specific chrome.exe:
     if chrome_binary:
         options.binary_location = chrome_binary
 
-    # Persistent profile for "login once"
-    if profile_dir:
-        options.add_argument(f"--user-data-dir={profile_dir}")
-
-    # Good defaults for Windows interactive sessions
-    options.add_argument("--start-maximized")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--remote-debugging-port=0")
-
-    if headless:
+    if headless and not attach_debug_port:
         options.add_argument("--headless=new")
 
-    # IMPORTANT: do NOT pass --no-sandbox on Windows (that's mainly for Linux containers)
+    # Stability flags (harmless; often reduce startup flakiness)
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-first-run")
+    options.add_argument("--no-default-browser-check")
+    options.add_argument("--disable-background-networking")
+    options.add_argument("--disable-dev-shm-usage")
+
+    prof = _norm_path(profile_dir)
+    if attach_debug_port:
+        # Attach mode: you launch Chrome manually; webdriver connects to it.
+        options.add_experimental_option("debuggerAddress", f"127.0.0.1:{attach_debug_port}")
+        return webdriver.Chrome(options=options)
+
+    # Launch mode: webdriver launches Chrome using a dedicated profile dir.
+    if prof:
+        Path(prof).mkdir(parents=True, exist_ok=True)
+        options.add_argument(f"--user-data-dir={prof}")
 
     return webdriver.Chrome(options=options)
 
@@ -57,6 +75,9 @@ class BrowserRelayConfig:
     stop_marker: str = "<STOP>"
     poll_interval_seconds: float = 1.5
     headless: bool = False
+    profile_dir: Optional[str] = None
+    chrome_binary: Optional[str] = None
+    attach_debug_port: Optional[int] = None
 
 
 class ChatGPTBrowserRelay:
@@ -73,7 +94,12 @@ class ChatGPTBrowserRelay:
         self.command_queue = command_queue
         self.config = config or BrowserRelayConfig()
         self.driver_factory = driver_factory or (
-            lambda: create_chrome_driver(headless=self.config.headless)
+            lambda: create_chrome_driver(
+                headless=self.config.headless,
+                profile_dir=self.config.profile_dir,
+                chrome_binary=self.config.chrome_binary,
+                attach_debug_port=self.config.attach_debug_port,
+            )
         )
         self.logger = logger or logging.getLogger(__name__)
         self._stop_event = threading.Event()
@@ -85,23 +111,22 @@ class ChatGPTBrowserRelay:
             self._driver = self.driver_factory()
         except Exception as exc:  # noqa: BLE001
             self.logger.error("Failed to create Chrome driver for browser relay: %s", exc)
-            self.logger.error(
-                "Most common fixes:\n"
-                "  1) Close ALL Chrome processes that might be using the same profile dir.\n"
-                "  2) Remove/avoid mismatched chromedriver on PATH; let Selenium Manager pick the right driver.\n"
-                "  3) Try a fresh empty profile dir and login once using normal Chrome first.\n"
-            )
+            self.logger.error("If you see DevToolsActivePort/session-not-created, use a fresh profile dir or attach mode.")
             return
 
         self.logger.info(
-            "Starting ChatGPT browser relay: url=%s selector=%s poll=%.2fs headless=%s",
+            "Relay starting: url=%s selector=%s poll=%.2fs headless=%s profile_dir=%s attach_port=%s",
             self.config.chatgpt_url,
             self.config.assistant_selector,
             self.config.poll_interval_seconds,
             self.config.headless,
+            self.config.profile_dir,
+            self.config.attach_debug_port,
         )
 
-        self._driver.get(self.config.chatgpt_url)
+        # Only navigate if we're not attaching to an already-open tab.
+        if not self.config.attach_debug_port:
+            self._driver.get(self.config.chatgpt_url)
 
         while not self._stop_event.is_set():
             try:
@@ -131,6 +156,7 @@ class ChatGPTBrowserRelay:
 
         elements = self._driver.find_elements(By.CSS_SELECTOR, self.config.assistant_selector)
         commands = self._extract_commands(elements)
+
         for command in commands:
             signature = self._signature(command)
             if signature in self._seen_signatures:
@@ -146,7 +172,7 @@ class ChatGPTBrowserRelay:
             re.DOTALL,
         )
         for element in elements:
-            text = (element.text or "").strip()
+            text = (getattr(element, "text", "") or "").strip()
             if not text:
                 continue
             for match in pattern.findall(text):
@@ -156,4 +182,4 @@ class ChatGPTBrowserRelay:
         return commands
 
     def _signature(self, command: str) -> str:
-        return str(hash(command))
+        return hashlib.sha256(command.encode("utf-8", errors="ignore")).hexdigest()
