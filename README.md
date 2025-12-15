@@ -13,6 +13,7 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 - **GUI resilience**: The chat input is pinned to the bottom and scales with the window, so resizing no longer hides or clips the entry field.
 - **Plan panel containment**: The GUI's plan sidebar wraps long text and enforces a bounded width so the chat log stays visible on typical single-monitor windows. A layout regression test guards the constraint.
 - **Autonomous orchestration**: Natural requests now route through an OpenAI-style tool-calling orchestrator that publishes live plan steps to memory, updates statuses as tools run, and pauses for confirmation on destructive actions before resuming.
+- **ChatGPT browser relay**: Optional watcher pipes `<START>...<STOP>` command blocks from a ChatGPT browser tab straight into the GUI input so remote copilots can drive Sentinel without touching the CLI.
 
 ## Runtime pipeline
 
@@ -72,6 +73,16 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 6. **Filesystem scope and common failure mode**
 
    Filesystem tools (`fs_list`, `fs_read`, `fs_write`, `fs_delete`) are pinned to `SENTINEL_SANDBOX_ROOT`. With the default root set to the entire `F:\\` drive, absolute paths anywhere on that drive are allowed. Attempts to reach outside the sandbox (for example, another drive letter) will be rejected with `Refusing path outside sandbox` from the resolver in `filesystem_tools.py`, and the orchestrator will skip execution. To narrow or relocate the sandbox, override `SENTINEL_SANDBOX_ROOT` before launch.
+
+7. **Run the ChatGPT browser relay (optional)**
+
+   Spin up the GUI with a watcher that listens for `<START> ... <STOP>` blocks in a ChatGPT tab and injects them as GUI input:
+
+   ```bash
+   python scripts/browser_chatgpt_relay.py --chatgpt-url "https://chat.openai.com/" --poll-seconds 1.5
+   ```
+
+   See [docs/browser_chatgpt_relay.md](docs/browser_chatgpt_relay.md) for the setup checklist, the ChatGPT prompt to paste, and troubleshooting tips.
 
 ## Tool summary
 

@@ -1,6 +1,7 @@
 """Tkinter GUI bootstrap for Sentinel MAX."""
 from __future__ import annotations
 
+import queue
 import sys
 import tkinter as tk
 from tkinter import ttk
@@ -38,6 +39,34 @@ def run_gui_app() -> None:
     root.mainloop()
 
 
+def run_gui_app_with_queue(command_queue: queue.Queue[str]) -> None:
+    """Launch the GUI with an injected command queue for automation relays."""
+
+    theme = load_theme()
+    root = tk.Tk()
+    root.title("Sentinel MAX")
+
+    style = ttk.Style(root)
+    if sys.platform.startswith("win"):
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+
+    root.configure(bg=theme["colors"]["app_bg"])
+    root.minsize(760, 520)
+
+    install_clipboard(root)
+
+    SentinelApp(
+        root,
+        theme=theme,
+        controller=SentinelController(),
+        injected_command_queue=command_queue,
+    )
+    root.mainloop()
+
+
 class SentinelApp:
     def __init__(
         self,
@@ -47,6 +76,7 @@ class SentinelApp:
         controller: SentinelController | None = None,
         bridge_cls: type[ControllerBridge] = ControllerBridge,
         build_layout: bool = True,
+        injected_command_queue: queue.Queue[str] | None = None,
     ):
         self.root = root
         self.theme = theme or load_theme()
@@ -61,11 +91,13 @@ class SentinelApp:
         self.plan_panel: PlanPanel | None = None
         self.log_panel: LogPanel | None = None
         self.state_panel: StatePanel | None = None
+        self.injected_command_queue = injected_command_queue
         if build_layout:
             self._build_layout()
             self._announce_health_status()
             self.bridge.refresh_logs()
             self.bridge.refresh_state()
+            self._start_injected_command_loop()
         self.root.protocol("WM_DELETE_WINDOW", self._shutdown)
 
     def _build_layout(self) -> None:
@@ -135,6 +167,27 @@ class SentinelApp:
         if not self.state_panel:
             return
         self.root.after(0, lambda: self.state_panel.update_state(state))
+
+    def _start_injected_command_loop(self) -> None:
+        if not self.injected_command_queue:
+            return
+
+        def _drain_queue() -> None:
+            if not self.injected_command_queue:
+                return
+            try:
+                while True:
+                    text = self.injected_command_queue.get_nowait()
+                    cleaned = (text or "").strip()
+                    if cleaned:
+                        self._handle_send(cleaned)
+            except queue.Empty:
+                pass
+            finally:
+                if self.injected_command_queue:
+                    self.root.after(200, _drain_queue)
+
+        self.root.after(200, _drain_queue)
 
     def _shutdown(self) -> None:
         try:
