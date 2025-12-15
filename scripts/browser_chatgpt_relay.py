@@ -15,14 +15,13 @@ import threading
 from queue import Queue
 
 from sentinel.gui.app import run_gui_app_with_queue
-from sentinel.watchers.browser_command_relay import (
-    BrowserRelayConfig,
-    ChatGPTBrowserRelay,
-)
+from sentinel.watchers.browser_command_relay import BrowserRelayConfig, ChatGPTBrowserRelay
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Relay ChatGPT <START>/<STOP> commands into Sentinel GUI.")
+    parser = argparse.ArgumentParser(
+        description="Relay ChatGPT <START>/<STOP> commands into Sentinel GUI."
+    )
     parser.add_argument("--chatgpt-url", default="https://chat.openai.com/")
     parser.add_argument("--poll-seconds", type=float, default=1.5)
     parser.add_argument("--headless", action="store_true")
@@ -31,11 +30,14 @@ def main() -> None:
     parser.add_argument("--stop-marker", default="<STOP>")
     parser.add_argument("--selector", default='div[data-message-author-role="assistant"]')
 
-    # NEW: profile + attach options
-    parser.add_argument("--profile-dir", default=None, help="Chrome user-data-dir to use (recommended).")
+    parser.add_argument("--profile-dir", default=None, help="Chrome user-data-dir (recommended).")
     parser.add_argument("--chrome-binary", default=None, help="Explicit chrome.exe path (optional).")
-    parser.add_argument("--attach-debug-port", type=int, default=None,
-                        help="Attach to an existing Chrome started with --remote-debugging-port=PORT.")
+    parser.add_argument(
+        "--attach-debug-port",
+        type=int,
+        default=None,
+        help="Attach to an existing Chrome started with --remote-debugging-port=PORT.",
+    )
 
     args = parser.parse_args()
 
