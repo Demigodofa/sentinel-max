@@ -59,15 +59,6 @@ if /I "%START_BROWSER_RELAY%"=="on" set "START_BROWSER_RELAY_NORMALIZED=1"
 echo ChatGPT relay flag: %START_BROWSER_RELAY%  ^(normalized: %START_BROWSER_RELAY_NORMALIZED%^) 
 >>"%LOG%" echo ChatGPT relay flag: %START_BROWSER_RELAY% ^(normalized: %START_BROWSER_RELAY_NORMALIZED%^)
 
-REM ---- Chromedriver check (Selenium Manager fallback allowed) ----
-set "CHROMEDRIVER_FOUND=0"
-set "CHROMEDRIVER_MSG=chromedriver not found on PATH; Selenium Manager will try to fetch a driver dynamically"
-where chromedriver >nul 2>&1 && (
-  set "CHROMEDRIVER_FOUND=1"
-  for /f "usebackq delims=" %%C in (`where chromedriver`) do set "CHROMEDRIVER_MSG=chromedriver: %%C"
-)
->>"%LOG%" echo %CHROMEDRIVER_MSG%
-
 REM ---- Python behavior ----
 set "PYTHONUNBUFFERED=1"
 set "PYTHONFAULTHANDLER=1"
@@ -103,6 +94,34 @@ if not exist "%VENV_PY%" (
   "%VENV_PY%" -m pip install --upgrade pip >> "%LOG%" 2>&1
   "%VENV_PY%" -m pip install -r ".\sentinel\requirements.txt" >> "%LOG%" 2>&1
   if errorlevel 1 goto :done
+)
+
+REM ---- Chromedriver check (Selenium Manager fallback allowed) ----
+set "CHROMEDRIVER_FOUND=0"
+set "CHROMEDRIVER_MSG=chromedriver not found on PATH; Selenium Manager will try to fetch a driver dynamically"
+set "CHROMEDRIVER_PATH="
+
+if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" (
+  where chromedriver >nul 2>&1 && (
+    set "CHROMEDRIVER_FOUND=1"
+    for /f "usebackq delims=" %%C in (`where chromedriver`) do if not defined CHROMEDRIVER_PATH set "CHROMEDRIVER_PATH=%%C"
+  )
+
+  if "%CHROMEDRIVER_FOUND%"=="0" (
+    for %%P in ("%VENV_DIR%\Scripts\chromedriver.exe" "%REPO%\scripts\chromedriver.exe" "%REPO%\chromedriver.exe") do (
+      if exist %%P (
+        set "CHROMEDRIVER_FOUND=1"
+        if not defined CHROMEDRIVER_PATH set "CHROMEDRIVER_PATH=%%~fP"
+      )
+    )
+  )
+
+  if defined CHROMEDRIVER_PATH (
+    for %%D in ("%CHROMEDRIVER_PATH%") do set "CHROMEDRIVER_MSG=chromedriver: %%~fD" & set "CHROMEDRIVER_DIR=%%~dpD"
+    if defined CHROMEDRIVER_DIR set "PATH=%CHROMEDRIVER_DIR%;%PATH%"
+  )
+
+  >>"%LOG%" echo %CHROMEDRIVER_MSG%
 )
 
 REM ---- Git sync + proof ----
