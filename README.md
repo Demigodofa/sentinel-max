@@ -14,6 +14,7 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 - **Plan panel containment**: The GUI's plan sidebar wraps long text and enforces a bounded width so the chat log stays visible on typical single-monitor windows. A layout regression test guards the constraint.
 - **Autonomous orchestration**: Natural requests now route through an OpenAI-style tool-calling orchestrator that publishes live plan steps to memory, updates statuses as tools run, and pauses for confirmation on destructive actions before resuming.
 - **ChatGPT browser relay**: Optional watcher pipes `<START>...<STOP>` command blocks from a ChatGPT browser tab straight into the GUI input so remote copilots can drive Sentinel without touching the CLI. The Windows launcher starts this Selenium-powered Chrome session by default when `START_BROWSER_RELAY` is set to `1`/`true`/`yes`/`on`; set it to `0` to skip. The launcher now echoes the normalized flag and whether `chromedriver` was discovered on `PATH` so you can immediately see why the relay did (or did not) start.
+- **ChatGPT browser relay**: Optional watcher pipes `<START>...<STOP>` command blocks from a ChatGPT browser tab straight into the GUI input so remote copilots can drive Sentinel without touching the CLI. The Windows launcher starts this Selenium-powered Chrome session by default when `START_BROWSER_RELAY` is set to `1`/`true`/`yes`/`on`; set it to `0` to skip. The launcher now echoes the normalized flag and whether `chromedriver` was discovered on `PATH` so you can immediately see why the relay did (or did not) start. If `chromedriver` is missing, the launcher warns and skips the relay instead of failing silently.
 
 ## Runtime pipeline
 
@@ -81,6 +82,8 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
    ```bash
    python scripts/browser_chatgpt_relay.py --chatgpt-url "https://chat.openai.com/" --poll-seconds 1.5
    ```
+
+   On Windows, the launcher now refuses to start the relay if `chromedriver` is not found on `PATH` and logs a warning with the remediation. The relay process also logs a clear error when driver creation fails (for example, if a matching Chrome/Chromedriver pair is not installed) so you can diagnose missing browser dependencies instead of wondering why no window appeared.
 
    The Windows launcher (`start_sentinel_max.bat`) now starts this Selenium listener in a separate window by default (Chrome window appears if `chromedriver` is on PATH); set `START_BROWSER_RELAY=0` in the script if you want to disable it. The launcher logs relay startup to `logs/launcher_last.log` alongside the main Sentinel process output.
 
