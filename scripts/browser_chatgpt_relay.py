@@ -11,7 +11,6 @@ if str(REPO_ROOT) not in sys.path:
 
 import argparse
 import logging
-import os
 import threading
 from queue import Queue
 
@@ -19,38 +18,24 @@ from sentinel.gui.app import run_gui_app_with_queue
 from sentinel.watchers.browser_command_relay import (
     BrowserRelayConfig,
     ChatGPTBrowserRelay,
-    create_chrome_driver,
 )
 
 
-def default_profile_dir() -> str:
-    # Prefer env var if set, otherwise default under F:\sentinel-data\chrome-profile\<COMPUTERNAME>
-    env = os.environ.get("SENTINEL_RELAY_PROFILE_DIR")
-    if env:
-        return env
-    computer = os.environ.get("COMPUTERNAME", "DEFAULT")
-    return fr"F:\sentinel-data\chrome-profile\{computer}"
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Relay ChatGPT commands into Sentinel.")
+    parser = argparse.ArgumentParser(description="Relay ChatGPT <START>/<STOP> commands into Sentinel GUI.")
     parser.add_argument("--chatgpt-url", default="https://chat.openai.com/")
     parser.add_argument("--poll-seconds", type=float, default=1.5)
     parser.add_argument("--headless", action="store_true")
+
     parser.add_argument("--start-marker", default="<START>")
     parser.add_argument("--stop-marker", default="<STOP>")
     parser.add_argument("--selector", default='div[data-message-author-role="assistant"]')
 
-    parser.add_argument(
-        "--profile-dir",
-        default=default_profile_dir(),
-        help="Chrome user-data-dir folder to persist login (close Chrome before running).",
-    )
-    parser.add_argument(
-        "--chrome-binary",
-        default=None,
-        help="Optional full path to chrome.exe if auto-detect is weird.",
-    )
+    # NEW: profile + attach options
+    parser.add_argument("--profile-dir", default=None, help="Chrome user-data-dir to use (recommended).")
+    parser.add_argument("--chrome-binary", default=None, help="Explicit chrome.exe path (optional).")
+    parser.add_argument("--attach-debug-port", type=int, default=None,
+                        help="Attach to an existing Chrome started with --remote-debugging-port=PORT.")
 
     args = parser.parse_args()
 
@@ -64,18 +49,12 @@ def main() -> None:
         stop_marker=args.stop_marker,
         poll_interval_seconds=args.poll_seconds,
         headless=args.headless,
+        profile_dir=args.profile_dir,
+        chrome_binary=args.chrome_binary,
+        attach_debug_port=args.attach_debug_port,
     )
 
-    relay = ChatGPTBrowserRelay(
-        command_queue,
-        config=config,
-        driver_factory=lambda: create_chrome_driver(
-            headless=args.headless,
-            profile_dir=args.profile_dir,
-            chrome_binary=args.chrome_binary,
-        ),
-        logger=logging.getLogger("browser_relay"),
-    )
+    relay = ChatGPTBrowserRelay(command_queue, config=config, logger=logging.getLogger("browser_relay"))
     relay_thread = threading.Thread(target=relay.run, daemon=True)
 
     try:
