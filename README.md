@@ -13,7 +13,7 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
 - **GUI resilience**: The chat input is pinned to the bottom and scales with the window, so resizing no longer hides or clips the entry field.
 - **Plan panel containment**: The GUI's plan sidebar wraps long text and enforces a bounded width so the chat log stays visible on typical single-monitor windows. A layout regression test guards the constraint.
 - **Autonomous orchestration**: Natural requests now route through an OpenAI-style tool-calling orchestrator that publishes live plan steps to memory, updates statuses as tools run, and pauses for confirmation on destructive actions before resuming.
-- **ChatGPT browser relay**: Optional watcher pipes `<START>...<STOP>` command blocks from a ChatGPT browser tab straight into the GUI input so remote copilots can drive Sentinel without touching the CLI.
+- **ChatGPT browser relay**: Optional watcher pipes `<START>...<STOP>` command blocks from a ChatGPT browser tab straight into the GUI input so remote copilots can drive Sentinel without touching the CLI. The Windows launcher starts this Selenium-powered Chrome session by default when `START_BROWSER_RELAY` is set to `1`/`true`/`yes`/`on`; set it to `0` to skip.
 
 ## Runtime pipeline
 
@@ -81,6 +81,8 @@ Run it via CLI/GUI/API and let the conversation router hand confirmed goals to t
    ```bash
    python scripts/browser_chatgpt_relay.py --chatgpt-url "https://chat.openai.com/" --poll-seconds 1.5
    ```
+
+   The Windows launcher (`start_sentinel_max.bat`) now starts this Selenium listener in a separate window by default (Chrome window appears if `chromedriver` is on PATH); set `START_BROWSER_RELAY=0` in the script if you want to disable it. The launcher logs relay startup to `logs/launcher_last.log` alongside the main Sentinel process output.
 
    See [docs/browser_chatgpt_relay.md](docs/browser_chatgpt_relay.md) for the setup checklist, the ChatGPT prompt to paste, and troubleshooting tips.
 
