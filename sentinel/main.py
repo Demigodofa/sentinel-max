@@ -17,7 +17,7 @@ import sys
 
 from sentinel.conversation import MessageDTO
 from sentinel.controller import SentinelController
-from sentinel.gui.app import run_gui_app
+from sentinel.gui.app import GUIStartupError, run_gui_app
 from sentinel.server.main import app as fastapi_app
 
 
@@ -62,11 +62,19 @@ def run_server() -> int:
     return 0
 
 
-def run_gui() -> int:
-    """Start the Tkinter GUI."""
+def run_gui(*, allow_cli_fallback: bool = True) -> int:
+    """Start the Tkinter GUI (with a CLI fallback if the display is unavailable)."""
+
     print(f"{APP_NAME} — GUI mode")
-    run_gui_app()
-    return 0
+    try:
+        run_gui_app()
+        return 0
+    except GUIStartupError as exc:
+        print("GUI startup failed:", exc)
+        if not allow_cli_fallback:
+            return 1
+        print("Falling back to CLI mode so you can still interact with the agent.\n")
+        return run_cli()
 
 
 def build_parser() -> argparse.ArgumentParser:
