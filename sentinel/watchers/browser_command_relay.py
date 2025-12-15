@@ -1,19 +1,10 @@
-"""Browser watcher that relays ChatGPT commands into the Sentinel GUI.
-
-Design goals:
-- Portable: keep a dedicated Chrome profile on the external drive (e.g., F:\\sentinel-data\\chrome-profile)
-- Robust: do NOT require chromedriver on PATH (use Selenium Manager when available)
-- Debuggable: log what the relay is seeing (message counts, extracted commands)
-"""
+"""Browser watcher that relays ChatGPT commands into the Sentinel GUI."""
 from __future__ import annotations
 
-import hashlib
 import logging
-import os
 import re
 import threading
 from dataclasses import dataclass
-from pathlib import Path
 from queue import Queue
 from typing import Callable, Iterable, List, Optional
 
@@ -22,49 +13,40 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
 
-def _default_profile_dir() -> str:
+def create_chrome_driver(
+    *,
+    headless: bool = False,
+    profile_dir: Optional[str] = None,
+    chrome_binary: Optional[str] = None,
+) -> webdriver.Chrome:
     """
-    Pick a stable, portable profile dir.
-    Priority:
-      1) SENTINEL_RELAY_PROFILE_DIR env var
-      2) F:\\sentinel-data\\chrome-profile (if F: exists)
-      3) .\\sentinel-data\\chrome-profile (repo-local fallback)
+    Create a Chrome driver configured for interactive use with an existing profile.
+
+    Notes:
+    - DO NOT have normal Chrome running with the same --user-data-dir when starting this.
+    - We intentionally rely on Selenium Manager (no hard chromedriver PATH requirement).
     """
-    env = os.environ.get("SENTINEL_RELAY_PROFILE_DIR", "").strip()
-    if env:
-        return env
-
-    # Common case for you: external SSD mounted as F:
-    if Path("F:/").exists():
-        return r"F:\sentinel-data\chrome-profile"
-
-    return str(Path.cwd() / "sentinel-data" / "chrome-profile")
-
-
-def create_chrome_driver(*, headless: bool = False) -> webdriver.Chrome:
-    """
-    Launch Chrome for the relay using a portable user profile (so you log in once).
-    Uses Selenium Manager automatically; chromedriver on PATH is optional.
-    """
-
-    profile_dir = os.environ.get("SENTINEL_RELAY_PROFILE_DIR", "").strip()
-
     options = Options()
+
+    # If you want to force a specific chrome.exe:
+    if chrome_binary:
+        options.binary_location = chrome_binary
+
+    # Persistent profile for "login once"
+    if profile_dir:
+        options.add_argument(f"--user-data-dir={profile_dir}")
+
+    # Good defaults for Windows interactive sessions
+    options.add_argument("--start-maximized")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--remote-debugging-port=0")
+
     if headless:
         options.add_argument("--headless=new")
 
-    # Stable defaults
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-
-    # Portable login profile (the important part)
-    if profile_dir:
-        options.add_argument(f"--user-data-dir={profile_dir}")
-        options.add_argument("--profile-directory=Default")
+    # IMPORTANT: do NOT pass --no-sandbox on Windows (that's mainly for Linux containers)
 
     return webdriver.Chrome(options=options)
-)
 
 
 @dataclass(slots=True)
@@ -75,15 +57,6 @@ class BrowserRelayConfig:
     stop_marker: str = "<STOP>"
     poll_interval_seconds: float = 1.5
     headless: bool = False
-
-    # Portable profile settings
-    profile_dir: Optional[str] = None
-    profile_name: Optional[str] = None
-    chrome_binary: Optional[str] = None
-
-    # Debug/behavior knobs
-    log_element_counts: bool = True
-    max_commands_per_poll: int = 25
 
 
 class ChatGPTBrowserRelay:
@@ -99,28 +72,13 @@ class ChatGPTBrowserRelay:
     ) -> None:
         self.command_queue = command_queue
         self.config = config or BrowserRelayConfig()
-
         self.driver_factory = driver_factory or (
-            lambda: create_chrome_driver(
-                headless=self.config.headless,
-                profile_dir=self.config.profile_dir,
-                profile_name=self.config.profile_name,
-                chrome_binary=self.config.chrome_binary,
-            )
+            lambda: create_chrome_driver(headless=self.config.headless)
         )
-
         self.logger = logger or logging.getLogger(__name__)
         self._stop_event = threading.Event()
         self._seen_signatures: set[str] = set()
         self._driver: webdriver.Chrome | None = None
-
-        # Precompile extraction regex
-        self._pattern = re.compile(
-            re.escape(self.config.start_marker)
-            + r"(.*?)"
-            + re.escape(self.config.stop_marker),
-            re.DOTALL,
-        )
 
     def run(self) -> None:
         try:
@@ -128,28 +86,19 @@ class ChatGPTBrowserRelay:
         except Exception as exc:  # noqa: BLE001
             self.logger.error("Failed to create Chrome driver for browser relay: %s", exc)
             self.logger.error(
-                "Fix checklist:\n"
-                "  1) Ensure Google Chrome is installed.\n"
-                "  2) Ensure selenium is installed (and preferably >= 4.6).\n"
-                "  3) If Selenium Manager cannot download drivers (proxy/corp lock-down), "
-                "install chromedriver manually OR allow outbound downloads."
+                "Most common fixes:\n"
+                "  1) Close ALL Chrome processes that might be using the same profile dir.\n"
+                "  2) Remove/avoid mismatched chromedriver on PATH; let Selenium Manager pick the right driver.\n"
+                "  3) Try a fresh empty profile dir and login once using normal Chrome first.\n"
             )
             return
 
         self.logger.info(
-            "Starting ChatGPT browser relay:\n"
-            "  url=%s\n"
-            "  selector=%s\n"
-            "  poll=%.2fs\n"
-            "  headless=%s\n"
-            "  profile_dir=%s\n"
-            "  profile_name=%s",
+            "Starting ChatGPT browser relay: url=%s selector=%s poll=%.2fs headless=%s",
             self.config.chatgpt_url,
             self.config.assistant_selector,
             self.config.poll_interval_seconds,
             self.config.headless,
-            self.config.profile_dir or _default_profile_dir(),
-            self.config.profile_name,
         )
 
         self._driver.get(self.config.chatgpt_url)
@@ -181,37 +130,30 @@ class ChatGPTBrowserRelay:
             return
 
         elements = self._driver.find_elements(By.CSS_SELECTOR, self.config.assistant_selector)
-        if self.config.log_element_counts:
-            self.logger.debug("Relay sees %d assistant elements", len(elements))
-
         commands = self._extract_commands(elements)
-
-        # Clamp to avoid spam if the page suddenly matches weird stuff
-        if len(commands) > self.config.max_commands_per_poll:
-            commands = commands[: self.config.max_commands_per_poll]
-
         for command in commands:
             signature = self._signature(command)
             if signature in self._seen_signatures:
                 continue
             self._seen_signatures.add(signature)
-            cleaned = command.strip()
-            if cleaned:
-                self.logger.info("Forwarding ChatGPT command (%d chars)", len(cleaned))
-                self.command_queue.put(cleaned)
+            self.logger.info("Forwarding ChatGPT command: %s", command.strip())
+            self.command_queue.put(command.strip())
 
     def _extract_commands(self, elements: Iterable) -> List[str]:
         commands: List[str] = []
+        pattern = re.compile(
+            re.escape(self.config.start_marker) + r"(.*?)" + re.escape(self.config.stop_marker),
+            re.DOTALL,
+        )
         for element in elements:
-            text = (getattr(element, "text", "") or "").strip()
+            text = (element.text or "").strip()
             if not text:
                 continue
-            for match in self._pattern.findall(text):
+            for match in pattern.findall(text):
                 cleaned = match.strip()
                 if cleaned:
                     commands.append(cleaned)
         return commands
 
     def _signature(self, command: str) -> str:
-        # Stable across runs (unlike Python's built-in hash which is salted per-process)
-        return hashlib.sha256(command.encode("utf-8", errors="ignore")).hexdigest()
+        return str(hash(command))
