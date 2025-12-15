@@ -50,6 +50,24 @@ set "OPENAI_API_KEY="
 >>"%LOG%" echo LLM_BASE_URL: %SENTINEL_LLM_BASE_URL%
 >>"%LOG%" echo LLM_MODEL: %SENTINEL_LLM_MODEL%
 
+REM ---- Listener toggle ----
+if not defined START_BROWSER_RELAY set "START_BROWSER_RELAY=1"
+set "START_BROWSER_RELAY_NORMALIZED=%START_BROWSER_RELAY%"
+if /I "%START_BROWSER_RELAY%"=="true" set "START_BROWSER_RELAY_NORMALIZED=1"
+if /I "%START_BROWSER_RELAY%"=="yes" set "START_BROWSER_RELAY_NORMALIZED=1"
+if /I "%START_BROWSER_RELAY%"=="on" set "START_BROWSER_RELAY_NORMALIZED=1"
+echo ChatGPT relay flag: %START_BROWSER_RELAY%  ^(normalized: %START_BROWSER_RELAY_NORMALIZED%^) 
+>>"%LOG%" echo ChatGPT relay flag: %START_BROWSER_RELAY% ^(normalized: %START_BROWSER_RELAY_NORMALIZED%^)
+
+REM ---- Chromedriver check ----
+set "CHROMEDRIVER_FOUND=0"
+set "CHROMEDRIVER_MSG=chromedriver not found on PATH"
+where chromedriver >nul 2>&1 && (
+  set "CHROMEDRIVER_FOUND=1"
+  for /f "usebackq delims=" %%C in (`where chromedriver`) do set "CHROMEDRIVER_MSG=chromedriver: %%C"
+)
+>>"%LOG%" echo %CHROMEDRIVER_MSG%
+
 REM ---- Python behavior ----
 set "PYTHONUNBUFFERED=1"
 set "PYTHONFAULTHANDLER=1"
@@ -105,6 +123,27 @@ git status -sb >> "%LOG%" 2>&1
 
 REM ---- Live tail window so you SEE logs while running ----
 start "Sentinel Log Tail" powershell -NoProfile -Command "Get-Content -Path '%LOG%' -Wait -Tail 120"
+
+REM ---- ChatGPT browser relay listener ----
+if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" (
+  echo Starting ChatGPT browser relay listener (Selenium Chrome window should appear)...
+  echo %CHROMEDRIVER_MSG%
+  >>"%LOG%" echo Starting ChatGPT browser relay listener...
+  >>"%LOG%" echo %CHROMEDRIVER_MSG%
+  >>"%LOG%" echo Expecting chromedriver on PATH; relay opens a ChatGPT tab and polls for <START>/<STOP> blocks.
+  start "Sentinel Browser Relay" cmd /k "echo ChatGPT relay log: %LOG% & echo %CHROMEDRIVER_MSG% & \"%VENV_PY%\" -u -X faulthandler scripts\\browser_chatgpt_relay.py >> \"%LOG%\" 2>&1"
+  if errorlevel 1 (
+    echo WARNING: Failed to launch ChatGPT browser relay. See log for details.
+    >>"%LOG%" echo WARNING: Failed to launch ChatGPT browser relay.
+  ) else (
+    echo ChatGPT browser relay requested; a Chrome window should open. If it does not, open %LOG% and search for "selenium" or "chromedriver" errors.
+    >>"%LOG%" echo ChatGPT browser relay process launched.
+  )
+) else (
+  echo ChatGPT browser relay disabled by START_BROWSER_RELAY=%START_BROWSER_RELAY%.
+  echo Set START_BROWSER_RELAY=1 (true/yes/on accepted) to launch the Selenium Chrome relay window.
+  >>"%LOG%" echo ChatGPT browser relay disabled by flag.
+)
 
 REM ---- Launch ----
 set "MODE=gui"
