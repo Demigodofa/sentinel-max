@@ -199,6 +199,9 @@ if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" (
     echo ChatGPT browser relay requested; a Chrome window should open. If it does not, open %LOG% and search for "selenium" or "chromedriver" errors.
     >>"%LOG%" echo ChatGPT browser relay process launched.
   )
+) else if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" (
+  echo ChatGPT browser relay skipped because Selenium/Chrome preflight failed. See %LOG% for details.
+  >>"%LOG%" echo ChatGPT browser relay skipped due to failed Selenium preflight.
 ) else (
   echo ChatGPT browser relay disabled by START_BROWSER_RELAY=%START_BROWSER_RELAY%.
   echo Set START_BROWSER_RELAY=1 (true/yes/on accepted) to launch the Selenium Chrome relay window.
