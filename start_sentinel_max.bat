@@ -68,6 +68,9 @@ REM ---- Venv ----
 set "VENV_DIR=.venv-%COMPUTERNAME%"
 set "VENV_PY=%REPO%\%VENV_DIR%\Scripts\python.exe"
 
+set "GUI_SUPPORTED=1"
+set "RELAY_READY=1"
+
 echo Using venv: %VENV_DIR%
 >>"%LOG%" echo Using venv: %VENV_DIR%
 
@@ -81,6 +84,18 @@ if not exist "%PY_CREATE%" (
 
 >>"%LOG%" echo PythonSelected: %PY_CREATE%
 "%PY_CREATE%" --version >> "%LOG%" 2>&1
+
+REM ---- Preflight: Tk / GUI availability ----
+echo Checking Tk / GUI availability...
+>>"%LOG%" echo Checking Tk / GUI availability...
+"%PY_CREATE%" -c "import tkinter" >> "%LOG%" 2>&1
+if errorlevel 1 (
+  echo ERROR: Tkinter is missing from %PY_CREATE%. The GUI cannot start until Python is installed with the Tcl/Tk option.
+  >>"%LOG%" echo ERROR: Tkinter import failed; GUI startup will be skipped. Install Python with Tcl/Tk support.
+  set "GUI_SUPPORTED=0"
+) else (
+  >>"%LOG%" echo Tkinter import succeeded; GUI launch allowed.
+)
 
 REM ---- Create venv if missing ----
 if not exist "%VENV_PY%" (
@@ -124,6 +139,20 @@ if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" (
   >>"%LOG%" echo %CHROMEDRIVER_MSG%
 )
 
+REM ---- Preflight: Selenium can launch Chrome (headless) ----
+if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" (
+  echo Checking Selenium/Chrome preflight (headless)...
+  >>"%LOG%" echo Checking Selenium/Chrome preflight (headless)...
+  "%VENV_PY%" -c "import sys; from sentinel.watchers.browser_command_relay import BrowserRelayConfig, create_chrome_driver; cfg=BrowserRelayConfig(headless=True); drv=create_chrome_driver(cfg); drv.quit()" >> "%LOG%" 2>&1
+  if errorlevel 1 (
+    echo WARNING: Selenium could not start Chrome. The ChatGPT relay will be skipped. See %LOG% for details.
+    >>"%LOG%" echo WARNING: Selenium preflight failed; skipping ChatGPT relay. Confirm Chrome is installed and chromedriver/Selenium Manager can reach it.
+    set "RELAY_READY=0"
+  ) else (
+    >>"%LOG%" echo Selenium/Chrome preflight succeeded.
+  )
+)
+
 REM ---- Git sync + proof ----
 echo Pulling latest updates from GitHub...
 >>"%LOG%" echo.
@@ -144,7 +173,7 @@ REM ---- Live tail window so you SEE logs while running ----
 start "Sentinel Log Tail" powershell -NoProfile -Command "Get-Content -Path '%LOG%' -Wait -Tail 120"
 
 REM ---- ChatGPT browser relay listener ----
-if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" (
+if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" if "%RELAY_READY%"=="1" (
   if "%CHROMEDRIVER_FOUND%"=="0" (
     echo WARNING: chromedriver not found on PATH; relying on Selenium Manager to fetch a compatible driver. Ensure Chrome is installed and internet access is available.
     >>"%LOG%" echo WARNING: chromedriver missing; using Selenium Manager fallback for relay startup.
@@ -165,6 +194,9 @@ if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" (
     echo ChatGPT browser relay requested; a Chrome window should open. If it does not, open %LOG% and search for "selenium" or "chromedriver" errors.
     >>"%LOG%" echo ChatGPT browser relay process launched.
   )
+) else if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" (
+  echo ChatGPT browser relay skipped because Selenium/Chrome preflight failed. See %LOG% for details.
+  >>"%LOG%" echo ChatGPT browser relay skipped due to failed Selenium preflight.
 ) else (
   echo ChatGPT browser relay disabled by START_BROWSER_RELAY=%START_BROWSER_RELAY%.
   echo Set START_BROWSER_RELAY=1 (true/yes/on accepted) to launch the Selenium Chrome relay window.
@@ -174,6 +206,12 @@ if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" (
 REM ---- Launch ----
 set "MODE=gui"
 if not "%~1"=="" set "MODE=%~1"
+
+if "%MODE%"=="gui" if "%GUI_SUPPORTED%"=="0" (
+  echo GUI prerequisites not met; forcing CLI mode. Check %LOG% for the Tkinter error and reinstall Python with Tcl/Tk support to restore the GUI.
+  >>"%LOG%" echo GUI prerequisites missing; switching to CLI mode because Tkinter is unavailable.
+  set "MODE=cli"
+)
 
 echo Launching mode: %MODE%...
 >>"%LOG%" echo Launching mode: %MODE%...
