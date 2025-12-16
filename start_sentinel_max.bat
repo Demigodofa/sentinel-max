@@ -69,7 +69,7 @@ set "VENV_DIR=.venv-%COMPUTERNAME%"
 set "VENV_PY=%REPO%\%VENV_DIR%\Scripts\python.exe"
 
 set "GUI_SUPPORTED=1"
-set "RELAY_READY=1"
+set "RELAY_PREFLIGHT_RC=0"
 
 echo Using venv: %VENV_DIR%
 >>"%LOG%" echo Using venv: %VENV_DIR%
@@ -144,10 +144,10 @@ if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" (
   echo Checking Selenium/Chrome preflight (headless)...
   >>"%LOG%" echo Checking Selenium/Chrome preflight (headless)...
   "%VENV_PY%" -c "import sys; from sentinel.watchers.browser_command_relay import BrowserRelayConfig, create_chrome_driver; cfg=BrowserRelayConfig(headless=True); drv=create_chrome_driver(cfg); drv.quit()" >> "%LOG%" 2>&1
-  if errorlevel 1 (
-    echo WARNING: Selenium could not start Chrome. The ChatGPT relay will be skipped. See %LOG% for details.
-    >>"%LOG%" echo WARNING: Selenium preflight failed; skipping ChatGPT relay. Confirm Chrome is installed and chromedriver/Selenium Manager can reach it.
-    set "RELAY_READY=0"
+  set "RELAY_PREFLIGHT_RC=%ERRORLEVEL%"
+  if not "%RELAY_PREFLIGHT_RC%"=="0" (
+    echo WARNING: Selenium could not start Chrome (preflight rc=%RELAY_PREFLIGHT_RC%). The relay will still attempt to launch so you can see the exact error. See %LOG% for details.
+    >>"%LOG%" echo WARNING: Selenium preflight failed (rc=%RELAY_PREFLIGHT_RC%). Continuing to launch relay so the runtime error is visible.
   ) else (
     >>"%LOG%" echo Selenium/Chrome preflight succeeded.
   )
@@ -173,7 +173,12 @@ REM ---- Live tail window so you SEE logs while running ----
 start "Sentinel Log Tail" powershell -NoProfile -Command "Get-Content -Path '%LOG%' -Wait -Tail 120"
 
 REM ---- ChatGPT browser relay listener ----
-if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" if "%RELAY_READY%"=="1" (
+if /I "%START_BROWSER_RELAY_NORMALIZED%"=="1" (
+  if not "%RELAY_PREFLIGHT_RC%"=="0" (
+    echo Proceeding with relay launch even though preflight failed (rc=%RELAY_PREFLIGHT_RC%). Errors should surface in the relay console window and %LOG%.
+    >>"%LOG%" echo Relay preflight rc=%RELAY_PREFLIGHT_RC%; proceeding so errors are visible at runtime.
+  )
+
   if "%CHROMEDRIVER_FOUND%"=="0" (
     echo WARNING: chromedriver not found on PATH; relying on Selenium Manager to fetch a compatible driver. Ensure Chrome is installed and internet access is available.
     >>"%LOG%" echo WARNING: chromedriver missing; using Selenium Manager fallback for relay startup.
